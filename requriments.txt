@@ -1,0 +1,7 @@
+torch==1.8.0
+torchvision==0.9.0
+gpytorch==1.4.0
+sklearn
+h5py
+atari-py
+stable-baselines3
