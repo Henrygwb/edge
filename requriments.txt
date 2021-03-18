@@ -5,3 +5,4 @@ sklearn
 h5py
 atari-py
 stable-baselines3
+seaborn
