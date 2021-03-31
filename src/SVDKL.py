@@ -185,13 +185,19 @@ class GridInterpolationVariationalStrategy(_VariationalStrategy):
         return res
 
     def forward(self, x, inducing_points, inducing_values, variational_inducing_covar=None):
+        # :param torch.Tensor inducing_points: Locations :math:`\mathbf Z` of the inducing points
+        # :param torch.Tensor inducing_values: Samples of the inducing function values :math:`\mathbf u`
+        #     (or the mean of the distribution :math:`q(\mathbf u)` if q is a Gaussian.
+        # :param ~gpytorch.lazy.LazyTensor variational_inducing_covar: If the distribuiton :math:`q(\mathbf u)`
+        #     is Gaussian, then this variable is the covariance matrix of that Gaussian. Otherwise, it will be
+        #     :attr:`None`.
         # Compute the variational posterior f, 
-        # given x,  z (inducing_points), and u (inducing values).
+        # given x,  z (inducing_points), and \mu_z (inducing values).
         # q(f|x) = \int p(f|u, x)q(u) du.
         # prior of p(f|x) ~ N(0, \Sigma_{xx}).
         # prior of p(u|z) ~ N(0, \Sigma_{zz}).
         # variational posterior of q(u) ~ N(\mu, LL^T).
-        # conditional posterior SoR approximation with KSI: p(f|x, u) = Mu
+        # conditional posterior SoR approximation with KSI: p(f|x, u) = M\mu_z
         # marginal posterior of f: q(f|x) ~ N(M\mu, MLL^TM^T).
         
         if variational_inducing_covar is None:
@@ -224,7 +230,7 @@ class GridInterpolationVariationalStrategy(_VariationalStrategy):
     # Defined in _variational_strategy, output the distribution of input x.
     # If in prior model, output the prior mean: model(x), else output the posterior(predictive) distribution by calling forward.
     # Usage: define s = GridInterpolationVariationalStrategy, and then call s(x).
-    
+
     def __call__(self, x, prior=False, **kwargs):
         # If we're in prior mode, then we're done!
         if prior:
@@ -265,6 +271,15 @@ class GridInterpolationVariationalStrategy(_VariationalStrategy):
                 f"Invalid variational distribuition ({type(variational_dist_u)}). "
                 "Expected a multivariate normal or a delta distribution."
             )
+
+    def kl_divergence(self):
+        # Compute the KL divergence between the variational inducing distribution :math:`q(\mathbf u)`
+        # and the prior inducing distribution :math:`p(\mathbf u)`.
+    
+        :rtype: torch.Tensor
+        with settings.max_preconditioner_size(0):
+            kl_divergence = torch.distributions.kl.kl_divergence(self.variational_distribution, self.prior_distribution)
+        return kl_divergence
 """
 
 # Final layer.
@@ -479,7 +494,7 @@ class VariationalELBO(_ApproximateMarginalLogLikelihood):
         # Get likelihood term and KL term
 
         num_batch = approximate_dist_f.event_shape[0]
-        log_likelihood = self._log_likelihood_term(approximate_dist_f, target, **kwargs).div(num_batch)
+        log_likelihood = self._log_likelihood_term(approximate_dist_f, target, **kwargs).div(num_batch) 
         kl_divergence = self.model.variational_strategy.kl_divergence().div(self.num_data / self.beta)
 
         # Add any additional registered loss terms
