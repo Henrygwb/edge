@@ -4,8 +4,7 @@
 # Using the standard variational strategy for covariance SVGP.
 # No approximation of the K_{xx}
 # No structure of the inducing points.
-# With Whitening.
-# Variational posterior q(f):
+# With Whitening - Variational posterior q(f):
 # \mathbb E[ f(\mathbf x) ] = \mathbf k_{\mathbf Z_\mu \mathbf x}^\top \mathbf K_{\mathbf Z_\mu \mathbf Z_\mu}^{-1} \mathbf m
 # \text{Var}[ f(\mathbf x) ] = k_{\mathbf x \mathbf x} - \mathbf k_{\mathbf Z_\sigma \mathbf x}^\top
 # \mathbf K_{\mathbf Z_\sigma \mathbf Z_\sigma}^{-1}\left( \mathbf K_{\mathbf Z_\sigma} -
