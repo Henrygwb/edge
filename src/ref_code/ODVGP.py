@@ -361,7 +361,7 @@ class OrthogonallyDecoupledVariationalStrategy(_VariationalStrategy):
 class ODVGPModel(gpytorch.Module):
     def __init__(self, mean_inducing_points, covar_inducing_points, encoder, use_encoder=False):
         super(ODVGPModel, self).__init__()
-        self.gp_layer = ODVGPModel(mean_inducing_points, covar_inducing_points, encoder, use_encoder)
+        self.gp_layer = GaussianProcessLayer(mean_inducing_points, covar_inducing_points, encoder, use_encoder)
         self.encoder = encoder
         self.use_encoder = use_encoder
 
