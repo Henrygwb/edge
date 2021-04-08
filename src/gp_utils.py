@@ -5,9 +5,15 @@ import torch
 import warnings
 import torch.nn as nn
 from gpytorch.likelihoods.likelihood import Likelihood
-# from gpytorch.likelihoods.gaussian_likelihood import _GaussianLikelihoodBase
-from gpytorch.distributions import Distribution, MultitaskMultivariateNormal, base_distributions
+from gpytorch.distributions import Distribution, MultitaskMultivariateNormal, base_distributions, MultivariateNormal
 from gpytorch.likelihoods.noise_models import HomoskedasticNoise
+from gpytorch import settings
+from gpytorch.utils.errors import CachingError
+from gpytorch.utils.warnings import OldVersionWarning
+from gpytorch.utils.cholesky import psd_safe_cholesky
+from gpytorch.variational._variational_strategy import _VariationalStrategy
+from gpytorch.utils.memoize import cached, clear_cache_hook, pop_from_cache_ignore_args
+from gpytorch.lazy import DiagLazyTensor, MatmulLazyTensor, RootLazyTensor, SumLazyTensor, TriangularLazyTensor, delazify
 
 
 class ConstantMean(nn.Module):
@@ -229,6 +235,7 @@ class CustomizedGaussianLikelihood(Likelihood):
         E_{f~q(f)}[log p(y|f)] = -N/2(log 2\pi + log \Sigma_{noise} + \Sigma_{noise}E_{f~q(f)}[(y - fW^{T})^{t}(y - fW^{T})])
         E_{f~q(f)}[(y - fW^{T})^{t}(y - fW^{T})]) = y^{T}y - W\mu^{T}y - y^{T}\muW^{T} - WE[f^{T}f]W^{T}
         E_{f~q(f)}[f^{T}f] = \sum_{n}[Sigma_{i}+\mu_{i}\mu_{i}^{T}]
+        Called by variational_elbo for computing the likelihood term in elbo.
         :param target: y (n, 1).
         :param input: q(f). 
         :param params: any
@@ -327,3 +334,204 @@ class CustomizedGaussianLikelihood(Likelihood):
     @raw_noise.setter
     def raw_noise(self, value):
         self.noise_covar.initialize(raw_noise=value)
+
+
+# todo: Customized variational strategy with trick 5 and 6.
+class CustomizedVariationalStrategy(_VariationalStrategy):
+    """
+    Implementation of our customized variational inference strategy.
+    This strategy is based on the standard variational strategy with whitening,
+    with the option for SoR approximation and KSI (Structured kernel interpolation).
+    Standard variational strategy with whitening:
+        Prior of u=f(z): p(u) ~ N(0, K_{zz})
+        Let u = Lv, where v ~ N(0, 1), LL^T = K_{zz}, change of variable from u to v.
+        Define the variational distribution of v as q(v) = N(\mu, S).
+        Then, we can compute the variational distribution of u as q(u) ~ N(L\mu, LSL^T).
+    Standard strategy:
+        q(f|v) = N(K_{xz}K_{zz}^(-1)Lv, K_{xx} - K_{xz}K_{zz}^{-1}K_{xz}^{T})
+        q(f) = N(K_{xz}K_{zz}^{-1/2}\mu, K_{xx} + K_{xz}K_{zz}^{-1/2}(S-I)K_{zz}^{-1/2}K_{xz}^{T})
+    With the SoR approximation:
+        q(f|v) \approx K_{xz}K_{zz}^(-1)Lv (Omit the variance of the conditional distribution q(f|u)).
+        Here q(f) = N(K_{xz}K_{zz}^{-1/2}\mu, K_{xz}K_{zz}^{-1/2}SK_{zz}^{-1/2}K_{xz}^{T})
+        K_{xx} can be approximated as  K_{xz}K_{zz}^{-1}K_{xz}^{T}.
+    """
+
+    def __init__(self, model, inducing_points, variational_distribution, learning_inducing_locations=True,
+                 using_sor=False):
+        """
+        :param model: Model this strategy is applied to (ApproximateGP).
+        :param inducing_points: z.
+        :param variational_distribution: q(u) or q(v) if whitening.
+        :param learning_inducing_locations: Whether to learn/udpate z.
+        :param using_sor: Whether to use SoR.
+        """
+        super(CustomizedVariationalStrategy, self).__init__(model, inducing_points, variational_distribution,
+                                                            learning_inducing_locations)
+        self.register_buffer("updated_strategy", torch.tensor(True))
+        self._register_load_state_dict_pre_hook(self._ensure_updated_strategy_flag_set)
+        self.using_sor = using_sor
+
+    @cached(name="cholesky_factor", ignore_args=True)
+    def _cholesky_factor(self, induc_induc_covar):
+        L = psd_safe_cholesky(delazify(induc_induc_covar).double())
+        return TriangularLazyTensor(L)
+
+    @ staticmethod
+    def _ensure_updated_strategy_flag_set(
+        self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
+    ):
+        device = state_dict[list(state_dict.keys())[0]].device
+        if prefix + "updated_strategy" not in state_dict:
+            state_dict[prefix + "updated_strategy"] = torch.tensor(False, device=device)
+            warnings.warn(
+                "You have loaded a variational GP model (using `VariationalStrategy`) from a previous version of "
+                "GPyTorch. We have updated the parameters of your model to work with the new version of "
+                "`VariationalStrategy` that uses whitened parameters.\nYour model will work as expected, but we "
+                "recommend that you re-save your model.",
+                OldVersionWarning,
+            )
+
+    @property
+    @cached(name="prior_distribution_memo")
+    def prior_distribution(self):
+        """
+        Prior of v rather than u due to changing of variables.
+        :return: v ~ N(0, I)
+        """
+        zeros = torch.zeros(
+            self._variational_distribution.shape(),
+            dtype=self._variational_distribution.dtype,
+            device=self._variational_distribution.device,
+        )
+        ones = torch.ones_like(zeros)
+        res = MultivariateNormal(zeros, DiagLazyTensor(ones))
+        return res
+
+    @property
+    @cached(name="variational_distribution_memo")
+    def variational_distribution(self):
+        """
+        Variational distribution of v.
+        :return: v ~ N(\mu, S), S=LL^{T}.
+        """
+        return self._variational_distribution()
+
+    def forward(self, x, inducing_points, inducing_values, variational_inducing_covar=None, **kwargs):
+        """
+        Computing the mariginal posterior of f: q(f) = \int p(f|x, u)q(u)du
+        :param x: Locations to get the variational posterior of the function values at.
+        :param inducing_points: Locations of the inducing points (z).
+        :param inducing_values: Samples of the inducing function values (u), or the mean of the distribution q(u)
+                                if q is a Gaussian, here it should be q(v).
+        :param variational_inducing_covar (gpytorch.lazy.LazyTensor): If the distribuiton q(u)/q(v) is Gaussian,
+        then this variable is the covariance matrix of that Gaussian. Otherwise, it will be :attr:`None`.
+        :return: q(f(x)).
+        """
+        # Compute full prior distribution
+        full_inputs = torch.cat([inducing_points, x], dim=-2)
+        full_output = self.model.forward(full_inputs, **kwargs)
+        full_covar = full_output.lazy_covariance_matrix
+
+        # Covariance terms
+        num_induc = inducing_points.size(-2)
+        test_mean = full_output.mean[..., num_induc:] # \mu_x
+        induc_induc_covar = full_covar[..., :num_induc, :num_induc].add_jitter() # K_{zz}.
+        induc_data_covar = full_covar[..., :num_induc, num_induc:].evaluate() # K_{xz}.
+        data_data_covar = full_covar[..., num_induc:, num_induc:] # K_{xx}.
+
+        # Compute interpolation terms
+        # K_ZZ^{-1/2} \mu_Z
+        L = self._cholesky_factor(induc_induc_covar) # LL^T = K_{zz}
+        if L.shape != induc_induc_covar.shape:
+            try:
+                pop_from_cache_ignore_args(self, "cholesky_factor")
+            except CachingError:
+                pass
+            L = self._cholesky_factor(induc_induc_covar)
+        interp_term = L.inv_matmul(induc_data_covar.double()).to(full_inputs.dtype) # K_{zz}^{-1/2} K_{xz}^T
+
+        # Compute the mean of q(f)
+        # K_{xz} K_{zz}^{-1/2} \mu_z + \mu_X
+        predictive_mean = (interp_term.transpose(-1, -2) @ inducing_values.unsqueeze(-1)).squeeze(-1) + test_mean
+
+        # Compute the covariance of q(f)
+        # K_XX + k_XZ K_ZZ^{-1/2} (S - I) K_ZZ^{-1/2} k_ZX
+        middle_term = self.prior_distribution.lazy_covariance_matrix.mul(-1) # -I
+        if variational_inducing_covar is not None:
+            middle_term = SumLazyTensor(variational_inducing_covar, middle_term) # S-I
+
+        if settings.trace_mode.on():
+            predictive_covar = (
+                data_data_covar.add_jitter(1e-4).evaluate()
+                + interp_term.transpose(-1, -2) @ middle_term.evaluate() @ interp_term
+            )
+        else:
+            predictive_covar = SumLazyTensor(
+                data_data_covar.add_jitter(1e-4),
+                MatmulLazyTensor(interp_term.transpose(-1, -2), middle_term @ interp_term),
+            )
+
+        # K_XZ K_ZZ^{-1/2} S K_ZZ^{-1/2} K_ZX
+        if self.using_sor and self.training:
+            middle_term = self.prior_distribution.lazy_covariance_matrix  # I
+
+            if settings.trace_mode.on():
+                if variational_inducing_covar is not None:
+                    middle_term = variational_inducing_covar @ middle_term.evaluate()
+                predictive_covar = (interp_term.transpose(-1, -2) @ middle_term.evaluate() @ interp_term)
+            else:
+                if variational_inducing_covar is not None:
+                    middle_term = variational_inducing_covar @ middle_term
+                predictive_covar = (interp_term.transpose(-1, -2) @ middle_term @ interp_term)
+
+        # Return the distribution
+        return MultivariateNormal(predictive_mean, predictive_covar)
+
+    def kl_divergence(self):
+        """
+        Compute the KL divergence between the variational inducing distribution q(v).
+        and the prior inducing distribution p(v), the KL term in ELBO.
+        KL(q(v)||p(v)) = \int q(v) log(p(v)/q(v)) dv.
+        :rtype: torch.Tensor
+        """
+        with settings.max_preconditioner_size(0):
+            kl_divergence = torch.distributions.kl.kl_divergence(self.variational_distribution, self.prior_distribution)
+        return kl_divergence
+
+    def __call__(self, x, prior=False, **kwargs):
+        """
+        call function VariationalStrategy(x, prior)
+        :param x: Location X.
+        :param prior: whether to output the prior distribution.
+        :return: marginal prior/posterior distribution.
+        """
+        if not self.updated_strategy.item() and not prior:
+            with torch.no_grad():
+                # Get unwhitened p(u)
+                prior_function_dist = self(self.inducing_points, prior=True)
+                prior_mean = prior_function_dist.loc
+                L = self._cholesky_factor(prior_function_dist.lazy_covariance_matrix.add_jitter())
+
+                # Temporarily turn off noise that's added to the mean
+                orig_mean_init_std = self._variational_distribution.mean_init_std
+                self._variational_distribution.mean_init_std = 0.0
+
+                # Change the variational parameters to be whitened
+                variational_dist = self.variational_distribution
+                mean_diff = (variational_dist.loc - prior_mean).unsqueeze(-1).double()
+                whitened_mean = L.inv_matmul(mean_diff).squeeze(-1).to(variational_dist.loc.dtype)
+                covar_root = variational_dist.lazy_covariance_matrix.root_decomposition().root.evaluate().double()
+                whitened_covar = RootLazyTensor(L.inv_matmul(covar_root).to(variational_dist.loc.dtype))
+                whitened_variational_distribution = variational_dist.__class__(whitened_mean, whitened_covar)
+                self._variational_distribution.initialize_variational_distribution(whitened_variational_distribution)
+
+                # Reset the random noise parameter of the model
+                self._variational_distribution.mean_init_std = orig_mean_init_std
+
+                # Reset the cache
+                clear_cache_hook(self)
+
+                # Mark that we have updated the variational strategy
+                self.updated_strategy.fill_(True)
+
+        return super().__call__(x, prior=prior, **kwargs)

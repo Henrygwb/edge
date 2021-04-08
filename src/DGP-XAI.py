@@ -2,10 +2,11 @@
 # 1. (Capturing the sequential dependency) Use a RNN (seq2seq) inside the RBF kernel function.
 # 2. (Non-Gaussian likelihood) Use the Variational inference with the variational distribution as q(u)~N(\mu, LL^T).
 # 3. Additive Gaussian process with two kernels - data (trajectory/individual) level and feature level.
-# 4. Whitening.
-# 5. (Faster way of computing p(f|u)) Use the inducing point technique with the SoR approximation of
+# 4. Standard variational strategy with whitening and SoR.
+#    (Faster way of computing p(f|u)) Use the inducing point technique with the SoR approximation of
 #    p(f|u)=K_{x,z}K_{z,z}u and p(f_*|u)=K_{x_*,z}K_{z,z}u.
-# 6. (Faster way of computing K_{x,z} in p(f|u)) KISS-GP: Use the local kernel interpolation technique
+# 5. Or Grid variational strategy with KSI and SoR.
+# (Faster way of computing K_{x,z} in p(f|u)) KISS-GP: Use the local kernel interpolation technique
 # (Structured kernel interpolation) to approximate K_{x,z}K_{z,z} with the interpolation matrix M.
 
 import math
@@ -15,11 +16,14 @@ import gpytorch
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
-from gp_utils import CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood
+from gp_utils import CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood, CustomizedVariationalStrategy
 
-# Hyper-parameters #
+# Hyper-parameters
 HIDDENS = []
 NUM_INDUCING_POINTS = 10
+USING_SOR = False # Whether to use SoR approximation.
+USING_KSI = False # Whether to use KSI approximation.
+GRID_BOUNDS = [(-10, 10)]
 LIKELIHOOD = 'Classification'
 RNN_CELL_TYPE = 'GRU'
 NUM_CLASSES = 2
@@ -27,6 +31,8 @@ N_EPOCHS = 5
 N_BATCHS = 4
 LR = 0.1
 GAMMA = 0.1 # LR decay multiplicative factor.
+SAVE_PATH = None
+
 
 # load the dataset.
 train_set = torch.utils.data.TensorDataset(torch.randn(20, 10, 20), torch.rand(8).round().long()) # torch.round(): round to the closest int.
@@ -122,11 +128,13 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
         """
         variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(
             num_inducing_points=inducing_points.size(0))
-        # todo: check whether the current implementation uses the SoR approximation and how to add KSI.
-        # todo: variational strategy with trick 5 and 6.
-        variational_strategy = gpytorch.variational.VariationalStrategy(
-            self, inducing_points, variational_distribution, learn_inducing_locations=True
-        )
+        if USING_KSI:
+            variational_strategy = gpytorch.variational.GridInterpolationVariationalStrategy(
+                self, NUM_INDUCING_POINTS, GRID_BOUNDS, variational_distribution)
+        else:
+            variational_strategy = CustomizedVariationalStrategy(self, inducing_points, variational_distribution,
+                                                                 learning_inducing_locations=True,
+                                                                 using_sor=USING_SOR)
         super(GaussianProcessLayer, self).__init__(variational_strategy)
 
         self.mean_module = gpytorch.means.ConstantMean()
@@ -208,7 +216,8 @@ print(model)
 # First, sampling from q(f) with shape [n_sample, n_data].
 # Then, the likelihood function times it with the mixing weight and get the marginal likelihood distribution p(y|f).
 # VariationalELBO will call _ApproximateMarginalLogLikelihood, which will then compute the marginal likelihood by
-# calling the likelihood function and the KL divergence.
+# calling the likelihood function (the expected_log_prob in the likelihood class)
+# and the KL divergence (VariationalStrategy.kl_divergence()).
 # ELBO = E_{q(f)}[p(y|f)] - KL[q(u)||p(u)].
 mll = gpytorch.mlls.VariationalELBO(likelihood, model.gp_layer, num_data=len(train_loader.dataset))
 
@@ -275,4 +284,4 @@ if __name__ == '__main__':
         scheduler.step()
         state_dict = model.state_dict()
         likelihood_state_dict = likelihood.state_dict()
-        torch.save({'model': state_dict, 'likelihood': likelihood_state_dict}, 'dkl_cifar_checkpoint.dat')
+        torch.save({'model': state_dict, 'likelihood': likelihood_state_dict}, SAVE_PATH)

@@ -5,7 +5,7 @@
 #    p(f|u)=K_{x,z}K_{z,z}u and p(f_*|u)=K_{x_*,z}K_{z,z}u.
 # 3. (Non-Gaussian likelihood) Use the Variational inference with the variational distribution as q(u)~N(\mu, LL^T).
 # 4. (Faster way of computing K_{x,z} in p(f|u)) KISS-GP: Use the local kernel interpolation technique
-# (Structured kernel interpolation) to approximate K_{x,z}K_{z,z} with the interpolation matrix M.
+# (Structured kernel interpolation) to approximate K_{x,z}K_{z,z}^{-1} with the interpolation matrix M.
 # 5. (Construct K_{z,z} with a specific structure) Place inducting point (Z) on a grid. Here, the inducing points are
 # fixed after defining the grid boundary and the grid size.
 # 6. Batch kernel learning -- multiple GPs for each input dimension.
