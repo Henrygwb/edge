@@ -15,6 +15,7 @@ import gpytorch
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
+from gp_utils import CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood
 
 # Hyper-parameters #
 HIDDENS = []
@@ -122,6 +123,7 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
         variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(
             num_inducing_points=inducing_points.size(0))
         # todo: check whether the current implementation uses the SoR approximation and how to add KSI.
+        # todo: variational strategy with trick 5 and 6.
         variational_strategy = gpytorch.variational.VariationalStrategy(
             self, inducing_points, variational_distribution, learn_inducing_locations=True
         )
@@ -175,11 +177,11 @@ class DGPXAIModel(gpytorch.Module):
 
     def forward(self, x):
         """
-        Compute the marginal posterior.
+        Compute the marginal posterior q(f) ~ N(\mu_f, \sigma_f), \mu_f (N*T, 1), \sigma_f(N*T, N*T).
+        Later, when computing the marginal loglikelihood, we sample multiple set of data from the marginal loglikelihood.
         :param x: input data x (N, T, P).
         :return: q(gy_layer(Encoder(x))).
         """
-        # todo: this function gives a distribution. How to get the sample corresponding to the input.
         step_embedding, traj_embedding = self.feature_extractor(x)  # (N, T, P) -> (N, T, D), (N, D).
         traj_embedding = traj_embedding[:, None, :].repeat(1, self.seq_len, 1) # (N, D) -> (N, T, D)
         features = torch.cat([step_embedding, traj_embedding], dim=-1) # (N, T, 2D)
@@ -189,24 +191,25 @@ class DGPXAIModel(gpytorch.Module):
 
 
 # Build the likelihood layer (Regression and classification).
-# __init__: define the mixing parameters (\theta 3: mixing parameters).
-# forward: compute the conditional likelihood.
 if LIKELIHOOD == 'regression':
-    # todo: Gaussian likelihood with mixting weight W.
     print('Conduct regression and use GaussianLikelihood')
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    likelihood = CustomizedGaussianLikelihood()
 elif LIKELIHOOD == 'classification':
     print('Conduct classification and use softmaxLikelihood')
-    likelihood = gpytorch.likelihoods.SoftmaxLikelihood(num_features=train_x.size(1), num_classes=NUM_CLASSES)
+    likelihood = CustomizedSoftmaxLikelihood(num_features=train_x.size(1), num_classes=NUM_CLASSES)
 else:
     print('Default choice is regression and use GaussianLikelihood')
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    likelihood = CustomizedGaussianLikelihood()
 
 # Compute the loss (ELBO) likelihood + KL divergence.
 model = DGPXAIModel(seq_len=train_x.size(1), input_dim=train_x.size(2), hiddens=HIDDENS,
                     num_inducing_points=NUM_INDUCING_POINTS)
 print(model)
-# ELBO = E_{q(f, u)}[p(y|f)] - KL[q(u)||p(u)].
+# First, sampling from q(f) with shape [n_sample, n_data].
+# Then, the likelihood function times it with the mixing weight and get the marginal likelihood distribution p(y|f).
+# VariationalELBO will call _ApproximateMarginalLogLikelihood, which will then compute the marginal likelihood by
+# calling the likelihood function and the KL divergence.
+# ELBO = E_{q(f)}[p(y|f)] - KL[q(u)||p(u)].
 mll = gpytorch.mlls.VariationalELBO(likelihood, model.gp_layer, num_data=len(train_loader.dataset))
 
 if torch.cuda.is_available():
