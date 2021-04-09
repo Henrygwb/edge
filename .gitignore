@@ -1,2 +1,4 @@
 Variational_Deep_GP.pdf
 /src/.idea
+/src/__pycache__/
+.idea

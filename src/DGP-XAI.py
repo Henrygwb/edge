@@ -19,13 +19,14 @@ import torch.optim as optim
 from gp_utils import CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood, CustomizedVariationalStrategy
 
 # Hyper-parameters
-HIDDENS = []
-NUM_INDUCING_POINTS = 10
+HIDDENS = [10, 5, 3]
+NUM_INDUCING_POINTS = 20
 USING_SOR = False # Whether to use SoR approximation.
 USING_KSI = False # Whether to use KSI approximation.
 GRID_BOUNDS = [(-10, 10)]
-LIKELIHOOD = 'Classification'
+LIKELIHOOD_TYPE = 'classification'
 RNN_CELL_TYPE = 'GRU'
+DROPOUT_RATE = 0.0
 NUM_CLASSES = 2
 N_EPOCHS = 5
 N_BATCHS = 4
@@ -35,8 +36,8 @@ SAVE_PATH = None
 
 
 # load the dataset.
-train_set = torch.utils.data.TensorDataset(torch.randn(20, 10, 20), torch.rand(8).round().long()) # torch.round(): round to the closest int.
-test_set = torch.utils.data.TensorDataset(torch.randn(8, 10, 20), torch.rand(4).round().long()) # torch.long(): change the data type to int64.
+train_set = torch.utils.data.TensorDataset(torch.randn(20, 10, 20), torch.rand(20).round().long()) # torch.round(): round to the closest int.
+test_set = torch.utils.data.TensorDataset(torch.randn(8, 10, 20), torch.rand(8).round().long()) # torch.long(): change the data type to int64.
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=N_BATCHS, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=N_BATCHS, shuffle=False)
 train_x = train_set.tensors[0]
@@ -93,15 +94,15 @@ class RNNEncoder(nn.Module):
         :return traj_embed: the latend representation of each trajectory (batch_size, hidden_dim).
         """
         if self.normalize:
-            mean = np.mean(x, axis=(0, 1))[None, None, :]
-            std = np.std(x, axis=(0, 1))[None, None, :]
+            mean = torch.mean(x, dim=(0, 1))[None, None, :]
+            std = torch.std(x, dim=(0, 1))[None, None, :]
             x = (x - mean)/std
-        mlp_encoded = self.mlp_encoder(x)
+        mlp_encoded = self.mlp_encoder(x) # (N, T, Hiddens[-2]) get the hidden representation of every time step.
         if self.rnn_cell_type == 'GRU':
             step_embed, traj_embed = self.rnn(mlp_encoded, h0)
         else:
             step_embed, traj_embed, _ = self.rnn(mlp_encoded, h0, c0)
-        traj_embed = torch.squeeze(traj_embed, 1) # (batch_size, 1, hidden_dim) -> (batch_size, hidden_dim)
+        traj_embed = torch.squeeze(traj_embed, 0) # (1, batch_size, hidden_dim) -> (batch_size, hidden_dim)
         traj_embed = self.traj_embed_layer(traj_embed) # (batch_size, hidden_dim)
         return step_embed, traj_embed
 
@@ -144,7 +145,7 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
                                            math.exp(-1), math.exp(1), sigma=0.1, transform=torch.exp)))
         self.traj_kernel = gpytorch.kernels.ScaleKernel(
             gpytorch.kernels.RBFKernel(ard_num_dims=input_dim_traj,
-                                       active_dims=tuple(range(input_dim_step, input_dim_traj)),
+                                       active_dims=tuple(range(input_dim_step, input_dim_traj+input_dim_step)),
                                        lengthscale_prior=gpytorch.priors.SmoothedBoxPrior(
                                            math.exp(-1), math.exp(1), sigma=0.1, transform=torch.exp)))
         self.covar_module = self.step_kernel + self.traj_kernel
@@ -156,7 +157,7 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
         :return: Prior distribution of x (MultivariateNormal).
         """
         mean = self.mean_module(x)
-        covar = self.covar_module(x)
+        covar = self.covar_module(x) # Checked this part, covar = self.step_kernel(x) + self.traj_kernel(x).
         return gpytorch.distributions.MultivariateNormal(mean, covar)
 
     # __call__: compute the conditional/marginal posterior.
@@ -190,7 +191,7 @@ class DGPXAIModel(gpytorch.Module):
         :param x: input data x (N, T, P).
         :return: q(gy_layer(Encoder(x))).
         """
-        step_embedding, traj_embedding = self.feature_extractor(x)  # (N, T, P) -> (N, T, D), (N, D).
+        step_embedding, traj_embedding = self.encoder(x)  # (N, T, P) -> (N, T, D), (N, D).
         traj_embedding = traj_embedding[:, None, :].repeat(1, self.seq_len, 1) # (N, D) -> (N, T, D)
         features = torch.cat([step_embedding, traj_embedding], dim=-1) # (N, T, 2D)
         features = features.reshape(x.size(0)*x.size(1), features.size(-1))
@@ -199,18 +200,18 @@ class DGPXAIModel(gpytorch.Module):
 
 
 # Build the likelihood layer (Regression and classification).
-if LIKELIHOOD == 'regression':
+if LIKELIHOOD_TYPE == 'regression':
     print('Conduct regression and use GaussianLikelihood')
-    likelihood = CustomizedGaussianLikelihood()
-elif LIKELIHOOD == 'classification':
+    likelihood = CustomizedGaussianLikelihood(num_features=train_x.size(1))
+elif LIKELIHOOD_TYPE == 'classification':
     print('Conduct classification and use softmaxLikelihood')
     likelihood = CustomizedSoftmaxLikelihood(num_features=train_x.size(1), num_classes=NUM_CLASSES)
 else:
     print('Default choice is regression and use GaussianLikelihood')
-    likelihood = CustomizedGaussianLikelihood()
+    likelihood = CustomizedGaussianLikelihood(num_features=train_x.size(1))
 
 # Compute the loss (ELBO) likelihood + KL divergence.
-model = DGPXAIModel(seq_len=train_x.size(1), input_dim=train_x.size(2), hiddens=HIDDENS,
+model = DGPXAIModel(seq_len=train_x.size(1), input_dim=train_x.size(2), hiddens=HIDDENS, dropout_rate=DROPOUT_RATE,
                     num_inducing_points=NUM_INDUCING_POINTS)
 print(model)
 # First, sampling from q(f) with shape [n_sample, n_data].
@@ -268,12 +269,18 @@ def test():
         for data, target in test_loader:
             if torch.cuda.is_available():
                 data, target = data.cuda(), target.cuda()
-            output = likelihood(model(data))  # This gives us 16 samples from the predictive distribution (q(f_*)).
-            pred = output.probs.mean(0).argmax(-1)  # Taking the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
-            correct += pred.eq(target.view_as(pred)).cpu().sum()
-    print('Test set: Accuracy: {}/{} ({}%)'.format(
-        correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
-    ))
+            f_predicted = model(data)
+            output = likelihood(f_predicted)  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
+            if LIKELIHOOD_TYPE == 'classification':
+                pred = output.probs.mean(0).argmax(-1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
+                correct += pred.eq(target.view_as(pred)).cpu().sum()
+                print('Test set: Accuracy: {}/{} ({}%)'.format(
+                    correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
+                ))
+            else:
+                preds = output.mean
+                print('Test MAE: {}'.format(torch.mean(torch.abs(preds - target))))
+                print('Test MAE: {}'.format(torch.mean(torch.square(preds - target))))
 
 
 if __name__ == '__main__':
@@ -282,6 +289,80 @@ if __name__ == '__main__':
             train(epoch)
             test()
         scheduler.step()
+    if SAVE_PATH:
         state_dict = model.state_dict()
         likelihood_state_dict = likelihood.state_dict()
         torch.save({'model': state_dict, 'likelihood': likelihood_state_dict}, SAVE_PATH)
+
+# All the keys in the state_dict.
+# encoder.mlp_encoder.mlp_0.weight (\Theta_1)
+# encoder.mlp_encoder.mlp_0.bias (\Theta_1)
+# encoder.mlp_encoder.mlp_1.weight (\Theta_1)
+# encoder.mlp_encoder.mlp_1.bias (\Theta_1)
+# encoder.rnn.weight_ih_l0 (\Theta_1)
+# encoder.rnn.weight_hh_l0 (\Theta_1)
+# encoder.rnn.bias_ih_l0 (\Theta_1)
+# encoder.rnn.bias_hh_l0 (\Theta_1)
+# encoder.traj_embed_layer.weight (\Theta_1)
+# encoder.traj_embed_layer.bias (\Theta_1)
+# gp_layer.variational_strategy.inducing_points (\Theta_2)
+# gp_layer.variational_strategy.variational_params_initialized
+# gp_layer.variational_strategy.updated_strategy
+# gp_layer.variational_strategy._variational_distribution.variational_mean (\Theta_2)
+# gp_layer.variational_strategy._variational_distribution.chol_variational_covar (\Theta_2)
+# gp_layer.mean_module.constant
+# gp_layer.step_kernel.raw_outputscale (\Theta_2)
+# gp_layer.step_kernel.active_dims
+# gp_layer.step_kernel.base_kernel.raw_lengthscale (\Theta_2)
+# gp_layer.step_kernel.base_kernel.active_dims
+# gp_layer.step_kernel.base_kernel.lengthscale_prior.a
+# gp_layer.step_kernel.base_kernel.lengthscale_prior.b
+# gp_layer.step_kernel.base_kernel.lengthscale_prior.sigma
+# gp_layer.step_kernel.base_kernel.lengthscale_prior.tails.loc
+# gp_layer.step_kernel.base_kernel.lengthscale_prior.tails.scale
+# gp_layer.step_kernel.base_kernel.raw_lengthscale_constraint.lower_bound
+# gp_layer.step_kernel.base_kernel.raw_lengthscale_constraint.upper_bound
+# gp_layer.step_kernel.raw_outputscale_constraint.lower_bound
+# gp_layer.step_kernel.raw_outputscale_constraint.upper_bound
+# gp_layer.traj_kernel.raw_outputscale (\Theta_2)
+# gp_layer.traj_kernel.active_dims
+# gp_layer.traj_kernel.base_kernel.raw_lengthscale (\Theta_2)
+# gp_layer.traj_kernel.base_kernel.active_dims
+# gp_layer.traj_kernel.base_kernel.lengthscale_prior.a
+# gp_layer.traj_kernel.base_kernel.lengthscale_prior.b
+# gp_layer.traj_kernel.base_kernel.lengthscale_prior.sigma
+# gp_layer.traj_kernel.base_kernel.lengthscale_prior.tails.loc
+# gp_layer.traj_kernel.base_kernel.lengthscale_prior.tails.scale
+# gp_layer.traj_kernel.base_kernel.raw_lengthscale_constraint.lower_bound
+# gp_layer.traj_kernel.base_kernel.raw_lengthscale_constraint.upper_bound
+# gp_layer.traj_kernel.raw_outputscale_constraint.lower_bound
+# gp_layer.traj_kernel.raw_outputscale_constraint.upper_bound
+# gp_layer.covar_module.kernels.0.raw_outputscale
+# gp_layer.covar_module.kernels.0.active_dims
+# gp_layer.covar_module.kernels.0.base_kernel.raw_lengthscale
+# gp_layer.covar_module.kernels.0.base_kernel.active_dims
+# gp_layer.covar_module.kernels.0.base_kernel.lengthscale_prior.a
+# gp_layer.covar_module.kernels.0.base_kernel.lengthscale_prior.b
+# gp_layer.covar_module.kernels.0.base_kernel.lengthscale_prior.sigma
+# gp_layer.covar_module.kernels.0.base_kernel.lengthscale_prior.tails.loc
+# gp_layer.covar_module.kernels.0.base_kernel.lengthscale_prior.tails.scale
+# gp_layer.covar_module.kernels.0.base_kernel.raw_lengthscale_constraint.lower_bound
+# gp_layer.covar_module.kernels.0.base_kernel.raw_lengthscale_constraint.upper_bound
+# gp_layer.covar_module.kernels.0.raw_outputscale_constraint.lower_bound
+# gp_layer.covar_module.kernels.0.raw_outputscale_constraint.upper_bound
+# gp_layer.covar_module.kernels.1.raw_outputscale
+# gp_layer.covar_module.kernels.1.active_dims
+# gp_layer.covar_module.kernels.1.base_kernel.raw_lengthscale
+# gp_layer.covar_module.kernels.1.base_kernel.active_dims
+# gp_layer.covar_module.kernels.1.base_kernel.lengthscale_prior.a
+# gp_layer.covar_module.kernels.1.base_kernel.lengthscale_prior.b
+# gp_layer.covar_module.kernels.1.base_kernel.lengthscale_prior.sigma
+# gp_layer.covar_module.kernels.1.base_kernel.lengthscale_prior.tails.loc
+# gp_layer.covar_module.kernels.1.base_kernel.lengthscale_prior.tails.scale
+# gp_layer.covar_module.kernels.1.base_kernel.raw_lengthscale_constraint.lower_bound
+# gp_layer.covar_module.kernels.1.base_kernel.raw_lengthscale_constraint.upper_bound
+# gp_layer.covar_module.kernels.1.raw_outputscale_constraint.lower_bound
+# gp_layer.covar_module.kernels.1.raw_outputscale_constraint.upper_bound
+
+# Key in the likelihood_state_dict.
+# mixing_weights (\Theta_3).

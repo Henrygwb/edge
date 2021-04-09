@@ -551,7 +551,8 @@ def test():
         for data, target in test_loader:
             if torch.cuda.is_available():
                 data, target = data.cuda(), target.cuda()
-            output = likelihood(model(data))  # This gives us 16 samples from the predictive distribution (q(f_*)).
+            f_predicted = model(data)
+            output = likelihood(f_predicted)  # This gives us 16 samples from the predictive distribution (q(f_*)).
             pred = output.probs.mean(0).argmax(-1)  # Taking the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
             correct += pred.eq(target.view_as(pred)).cpu().sum()
     print('Test set: Accuracy: {}/{} ({}%)'.format(

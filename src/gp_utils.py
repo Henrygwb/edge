@@ -151,12 +151,17 @@ class CustomizedSoftmaxLikelihood(Likelihood):
         if mixing_weights_prior is not None:
             self.register_prior("mixing_weights_prior", mixing_weights_prior, "mixing_weights")
 
+    def expected_log_prob(self, observations, function_dist, *args, **kwargs):
+        likelihood_samples = self._draw_likelihood_samples(function_dist, *args, **kwargs)
+        res = likelihood_samples.log_prob(observations).mean(dim=0)
+        return res * self.num_features # times seq_len, because the log_likelihood in _approximate_mll will divide (n_traj*seq_len).
+
     def forward(self, function_samples, *params, **kwargs):
         """
         :param function_samples: samples from q(f).
         :return: Marginal likelihood distribution.
         """
-        num_data, num_features = function_samples.shape[-2:]
+        num_data = int(function_samples.shape[-1]/self.num_features)
 
         # Catch legacy mode
         if num_data == self.num_features:
@@ -168,30 +173,20 @@ class CustomizedSoftmaxLikelihood(Likelihood):
             function_samples = function_samples.transpose(-1, -2)
             num_data, num_features = function_samples.shape[-2:]
 
-        if num_features != self.num_features:
-            raise RuntimeError("There should be %d features" % self.num_features)
-
         function_samples = function_samples.resize(function_samples.size(0),
-                                                   num_data/self.num_features, self.num_features)
-        print('Check the shape of f, should be [n_likelihood_sample, n_traj, traj_length]:')
-        print(function_samples.shape)
+                                                   num_data, self.num_features)
+        # print('Check the shape of f, should be [n_likelihood_sample, n_traj, traj_length]:')
+        # print(function_samples.shape)
         if self.mixing_weights is not None:
             mixed_fs = function_samples @ self.mixing_weights.t()  # num_classes x num_data
-            print('Check the shape of fW, should be [n_likelihood_sample, n_traj, n_classes]:')
-            print(mixed_fs.shape)
+            # print('Check the shape of fW, should be [n_likelihood_sample, n_traj, n_classes]:')
+            # print(mixed_fs.shape)
         else:
             mixed_fs = function_samples
         res = base_distributions.Categorical(logits=mixed_fs)
         return res
 
     def __call__(self, function, *params, **kwargs):
-        if isinstance(function, Distribution) and not isinstance(function, MultitaskMultivariateNormal):
-            warnings.warn(
-                "The input to SoftmaxLikelihood should be a MultitaskMultivariateNormal (num_data x num_tasks). "
-                "Batch MultivariateNormal inputs (num_tasks x num_data) will be deprectated.",
-                DeprecationWarning,
-            )
-            function = MultitaskMultivariateNormal.from_batch_mvn(function)
         return super().__call__(function, *params, **kwargs)
 
 
@@ -482,7 +477,7 @@ class CustomizedVariationalStrategy(_VariationalStrategy):
             else:
                 if variational_inducing_covar is not None:
                     middle_term = variational_inducing_covar @ middle_term
-                predictive_covar = (interp_term.transpose(-1, -2) @ middle_term @ interp_term)
+                predictive_covar = MatmulLazyTensor(interp_term.transpose(-1, -2), middle_term @ interp_term)
 
         # Return the distribution
         return MultivariateNormal(predictive_mean, predictive_covar)
