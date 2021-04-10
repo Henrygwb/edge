@@ -5,7 +5,13 @@
 # 4. Standard variational strategy with whitening and SoR.
 #    (Faster way of computing p(f|u)) Use the inducing point technique with the SoR approximation of
 #    p(f|u)=K_{x,z}K_{z,z}u and p(f_*|u)=K_{x_*,z}K_{z,z}u.
-# 5. Or Grid variational strategy with KSI and SoR.
+# 5. Standard variational strategy with SoR.
+# 6. Natural Gradient Descent: Second-order optimization with Hessian replaced by Fisher Information matrix.
+#    Optimization in the distribution space with the KL divergence as the distance measure. Better choice for
+#    Variational distribution parameter.
+# 7. Standard variational strategy with Contour Integral Quadrature to approximate K_{zz}^{-1/2},
+#    Use it together with NGD.
+# 8. Grid variational strategy with KSI.
 # (Faster way of computing K_{x,z} in p(f|u)) KISS-GP: Use the local kernel interpolation technique
 # (Structured kernel interpolation) to approximate K_{x,z}K_{z,z} with the interpolation matrix M.
 
@@ -23,21 +29,24 @@ HIDDENS = [10, 5, 3]
 NUM_INDUCING_POINTS = 20
 USING_SOR = False # Whether to use SoR approximation.
 USING_KSI = False # Whether to use KSI approximation.
+USING_NGD = False # Whether to use natural gradient descent.
+USING_CIQ = False # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
 GRID_BOUNDS = [(-10, 10)]
-LIKELIHOOD_TYPE = 'classification'
-RNN_CELL_TYPE = 'GRU'
+LIKELIHOOD_TYPE = 'regression' # 'classification'
+RNN_CELL_TYPE = 'GRU' # 'LSTM'
 DROPOUT_RATE = 0.0
 NUM_CLASSES = 2
 N_EPOCHS = 5
 N_BATCHS = 4
-LR = 0.1
+LR = 0.01
+OPTIMIZER = 'adam' # 'sgd'
 GAMMA = 0.1 # LR decay multiplicative factor.
 SAVE_PATH = None
 
 
 # load the dataset.
-train_set = torch.utils.data.TensorDataset(torch.randn(20, 10, 20), torch.rand(20).round().long()) # torch.round(): round to the closest int.
-test_set = torch.utils.data.TensorDataset(torch.randn(8, 10, 20), torch.rand(8).round().long()) # torch.long(): change the data type to int64.
+train_set = torch.utils.data.TensorDataset(torch.randn(20, 10, 20), torch.randn(20).round().long()) # torch.round(): round to the closest int.
+test_set = torch.utils.data.TensorDataset(torch.randn(8, 10, 20), torch.randn(8).round().long()) # torch.long(): change the data type to int64.
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=N_BATCHS, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=N_BATCHS, shuffle=False)
 train_x = train_set.tensors[0]
@@ -127,11 +136,23 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
         :param input_dim_traj: traj embedding dim.
         :param inducing_points: inducing points at the latent space (n, input_dim_step+input_dim_traj).
         """
-        variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(
-            num_inducing_points=inducing_points.size(0))
+        if USING_NGD:
+            if LIKELIHOOD_TYPE == 'regression':
+                variational_distribution = gpytorch.variational.NaturalVariationalDistribution(
+                    num_inducing_points=inducing_points.size(0))
+            else:
+                variational_distribution = gpytorch.variational.TrilNaturalVariationalDistribution(
+                    num_inducing_points=inducing_points.size(0))
+        else:
+            variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(
+                num_inducing_points=inducing_points.size(0))
+
         if USING_KSI:
             variational_strategy = gpytorch.variational.GridInterpolationVariationalStrategy(
                 self, NUM_INDUCING_POINTS, GRID_BOUNDS, variational_distribution)
+        elif USING_CIQ:
+            variational_strategy = gpytorch.variational.CiqVariationalStrategy(
+                self, inducing_points, variational_distribution, learn_inducing_locations=True)
         else:
             variational_strategy = CustomizedVariationalStrategy(self, inducing_points, variational_distribution,
                                                                  learning_inducing_locations=True,
@@ -228,11 +249,33 @@ if torch.cuda.is_available():
 
 # Define the optimizer over the parameters
 # (RNN parameters, RBF kernel parameters, Z, variational parameters, mixing weight).
-optimizer = optim.Adam([
-    {'params': model.encoder.parameters(), 'weight_decay': 1e-4},
-    {'params': model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
-    {'params': model.gp_layer.variational_parameters()},
-    {'params': likelihood.parameters()}, ], lr=LR, weight_decay=0)
+
+if USING_NGD:
+    variational_ngd_optimizer = gpytorch.optim.NGD(model.gp_layer.variational_parameters(),
+                                                   num_data=train_y.size(0), lr=LR*10)
+    if OPTIMIZER == 'adam':
+        hyperparameter_optimizer = optim.Adam([
+            {'params': model.encoder.parameters(), 'weight_decay': 1e-4},
+            {'params': model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
+            {'params': likelihood.parameters()}, ], lr=LR, weight_decay=0)
+    else:
+        hyperparameter_optimizer = optim.SGD([
+            {'params': model.encoder.parameters(), 'weight_decay': 1e-4},
+            {'params': model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
+            {'params': likelihood.parameters()}, ], lr=LR, weight_decay=0)
+else:
+    if OPTIMIZER == 'adam':
+        optimizer = optim.Adam([
+            {'params': model.encoder.parameters(), 'weight_decay': 1e-4},
+            {'params': model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
+            {'params': model.gp_layer.variational_parameters()},
+            {'params': likelihood.parameters()}, ], lr=LR, weight_decay=0)
+    else:
+        optimizer = optim.SGD([
+            {'params': model.encoder.parameters(), 'weight_decay': 1e-4},
+            {'params': model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
+            {'params': model.gp_layer.variational_parameters()},
+            {'params': likelihood.parameters()}, ], lr=LR, momentum=0.9, nesterov=True, weight_decay=0)
 
 # Learning rate decay schedule.
 scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[0.5 * N_EPOCHS, 0.75 * N_EPOCHS], gamma=GAMMA)
@@ -250,11 +293,19 @@ def train(epoch):
         for data, target in minibatch_iter:
             if torch.cuda.is_available():
                 data, target = data.cuda(), target.cuda()
-            optimizer.zero_grad()
+            if USING_NGD:
+                variational_ngd_optimizer.zero_grad()
+                hyperparameter_optimizer.zero_grad()
+            else:
+                optimizer.zero_grad()
             output = model(data) # marginal variational posterior, q(f|x).
             loss = -mll(output, target) # approximated ELBO.
             loss.backward()
-            optimizer.step()
+            if USING_NGD:
+                variational_ngd_optimizer.step()
+                hyperparameter_optimizer.step()
+            else:
+                optimizer.step()
             minibatch_iter.set_postfix(loss=loss.item())
 
 

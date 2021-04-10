@@ -159,7 +159,7 @@ class CustomizedSoftmaxLikelihood(Likelihood):
     def forward(self, function_samples, *params, **kwargs):
         """
         :param function_samples: samples from q(f).
-        :return: Marginal likelihood distribution.
+        :return: Conditional likelihood distribution.
         """
         num_data = int(function_samples.shape[-1]/self.num_features)
 
@@ -203,10 +203,10 @@ class CustomizedGaussianLikelihood(Likelihood):
         :param noise_constraint: Constraint for noise parameter :math:`\sigma^2`.
         :param batch_shape: The batch shape of the learned noise parameter (default: []).
         """
+        super().__init__()
         self.noise_covar = HomoskedasticNoise(
             noise_prior=noise_prior, noise_constraint=noise_constraint, batch_shape=batch_shape
         )
-        super().__init__()
         self.register_parameter(
             name="mixing_weights",
             parameter=torch.nn.Parameter(torch.randn(1, num_features).div_(num_features)),
@@ -225,11 +225,35 @@ class CustomizedGaussianLikelihood(Likelihood):
 
     def expected_log_prob(self, target, input, *params, **kwargs):
         """
-        Compute the expected conditional log likelihood (likelihood term in ELBO) E_{f~q(f)}[log p(y|f)].
-        q(f)=N(\mu_f (n*T, 1), \Sigma_f(n*T, n*T)), p(y|f)=N(fW^{T}, \epsilon), f: (1, T) W: (T, 1) \epsilon ~ N(0, \sigma_{noise}).
-        E_{f~q(f)}[log p(y|f)] = -N/2(log 2\pi + log \Sigma_{noise} + \Sigma_{noise}E_{f~q(f)}[(y - fW^{T})^{t}(y - fW^{T})])
+        Compute the expected conditional log likelihood (likelihood term in ELBO) E_{f~q(f)}[log p(y|f)], f ~ N(\mu, \Sigma).
+        For standard SVGP regression, the likelihood layer is GaussianLikelihood: y = f + \epsilon, \epsilon ~ N(0, \sigma^{2}).
+        E_{f~q(f)}[log p(y|f)] = -N/2(log 2\pi + log \sigma^{2} + \sum_{i=1}^{N} [(y_i - \mu_i)^2 + \Sigma_{ii}] /sigma^{2}).
+        In the matrix form:
+        E_{f~q(f)}[log p(y|f)] = -N/2(log 2\pi + log \sigma^{2} + [(Y - \mu)^T(Y - \mu) + \sum_{i} \Sigma_{ii}] /sigma^{2}.
+        Code implementation:
+        def expected_log_prob(self, target: Tensor, input: MultivariateNormal)
+            mean, variance = input.mean, input.variance # \mu (N, ), diag(\Sigma) (N, ).
+            num_event_dim = len(input.event_shape)
+
+            noise = self._shaped_noise_covar(mean.shape, *params, **kwargs).diag()
+            # Potentially reshape the noise to deal with the multitask case
+            noise = noise.view(*noise.shape[:-1], *input.event_shape) # (N, )
+
+            res = ((target - mean) ** 2 + variance) / noise + noise.log() + math.log(2 * math.pi) # (N, )
+            res = res.mul(-0.5) # (N, )
+            if num_event_dim > 1:  # Do appropriate summation for multitask Gaussian likelihoods
+                res = res.sum(list(range(-1, -num_event_dim, -1)))
+            return res # Vector with each element as the exact Expected log likelihood of each target.
+
+        For our model, the liklihood term is: y = f_reshaped W^{T} + \epsilon.
+        q(f)=N(\mu_f (n*T, 1), \Sigma_f(n*T, n*T)),
+        p(y|f)=N(fW^{T}, \sigma^{2}), f: (n, T) W: (T, 1).
+
+        E_{f~q(f)}[log p(y|f)] = -N/2(log 2\pi + log \sigma^{2} + E_{f~q(f)}[(y - fW^{T})^{t}(y - fW^{T})]/\sigma^{2})
         E_{f~q(f)}[(y - fW^{T})^{t}(y - fW^{T})]) = y^{T}y - W\mu^{T}y - y^{T}\muW^{T} - WE[f^{T}f]W^{T}
-        E_{f~q(f)}[f^{T}f] = \sum_{n}[Sigma_{i}+\mu_{i}\mu_{i}^{T}]
+        E_{f~q(f)}[f^{T}f] = \sum_{n}[Sigma_{i}+\mu_{i}^{T}\mu_{i}]
+        In the vector form:
+        E_{f~q(f)}[log p(y|f)] = -N/2(log 2\pi + log \sigma^{2} + \sum_{i=1}^{N} [(y_i - \mu_{i}W^T)^2 + \Sigma_{i}] /sigma^{2}).
         Called by variational_elbo for computing the likelihood term in elbo.
         :param target: y (n, 1).
         :param input: q(f). 
@@ -237,30 +261,50 @@ class CustomizedGaussianLikelihood(Likelihood):
         :param kwargs: any
         :return: E_{f~q(f)}[log p(y|f)].
         """
-        mean, variance = input.mean, input.variance # mean and var of q(f).
+        mean, covar = input.mean, input.covariance_matrix # mean and covar of q(f).
         num_event_dim = len(input.event_shape)
+        num_data = int(mean.shape[0]/self.num_features)
+        noise = self._shaped_noise_covar(torch.Size([num_data]), *params, **kwargs).diag() # noise variance.
 
-        noise = self._shaped_noise_covar(mean.shape, *params, **kwargs).diag() # noise variance.
         # Potentially reshape the noise to deal with the multitask case
         noise = noise.view(*noise.shape[:-1], *input.event_shape)
-
-        exp_ff = variance[0:self.num_features, 0:self.num_features] \
-                 + mean[0:self.num_features] @ mean[0:self.num_features].transpose(-2, -1)
-        for i in range(num_event_dim-1):
-            i = i+1
-            exp_ff_tmp = variance[self.num_features*i:self.num_features*(i+1), self.num_features*i:self.num_features*(i+1)] \
-                         + mean[self.num_features*i:self.num_features*(i+1)] @ mean[self.num_features*i:self.num_features*(i+1)].transpose(-2, -1)
-            exp_ff += exp_ff_tmp
-
-        target_transpose = target.transpose(-2, -1)
         w_transpose = self.mixing_weights.transpose(-2, -1)
-        mean_matrix = mean.resize(num_event_dim, self.num_features)
-        mean_matrix_transpose = mean_matrix.transpose(-2, -1)
-        exp_y_f = target_transpose @ target - self.mixing_weights @ mean_matrix_transpose @ target - \
-                  target_transpose @ mean_matrix @ w_transpose - self.mixing_weights @ exp_ff @ w_transpose
+
+        # Computing N WE[f_{i}^{T}f_{i}]W^T with for loop.
+        # exp_ff = torch.zeros(num_data)
+        # for i in range(num_data):
+        #     exp_ff[i] = covar[self.num_features*i:self.num_features*(i+1), self.num_features*i:self.num_features*(i+1)] \
+        #                 + mean[self.num_features*i:self.num_features*(i+1)] @ mean[self.num_features*i:self.num_features*(i+1)].transpose(-2, -1)
+        #     exp_ff[i] = self.mixing_weights @ exp_ff[i] @ w_transpose
+
+        # Computing N WE[f_{i}^{T}f_{i}]W^T with matrix computation.
+        # Suppose num_data = t
+        # left = [W, 0, 0, 0,
+        #         0, W, 0, 0,
+        #         0, 0, W, 0,
+        #         0, 0, 0, W] (N, N*T)
+        # middle = covar + mean[:, None] @ mean[None, :] (N*T, N*T)
+        # right = [W^T, W^T, W^T, W^T]^T (N*T, 1)
+
+        exp_ff = covar + mean[:, None] @ mean[None, :]
+        left_weight = torch.zeros(num_data, num_data*self.num_features)
+        for i in range(num_data):
+            left_weight[i, i*self.num_features:(i+1)*self.num_features] = self.mixing_weights.flatten()
+        right_weight = w_transpose.repeat(num_data)
+        exp_ff = left_weight @ exp_ff @ right_weight
+
+        mean_matrix = mean.resize(num_data, self.num_features)
+        mean_w = mean_matrix @ w_transpose
+        exp_y_f = (target - mean_w)**2 + exp_ff
         res = (exp_y_f) / noise + noise.log() + math.log(2 * math.pi)
-        res = res.mul(-0.5 * num_event_dim)
-        return res
+        res = res.mul(-0.5)
+
+        # matrix form: summation of res.
+        # target_transpose = target.transpose(-2, -1)
+        # exp_y_f = target_transpose @ target - self.mixing_weights @ mean_matrix_transpose @ target - \
+        #           target_transpose @ mean_matrix @ w_transpose - self.mixing_weights @ exp_ff @ w_transpose
+
+        return res * self.num_features # times seq_len, because the log_likelihood in _approximate_mll will divide (n_traj*seq_len).
 
     def forward(self, function_samples, *params, **kwargs):
         """
@@ -296,19 +340,36 @@ class CustomizedGaussianLikelihood(Likelihood):
     def marginal(self, function_dist, *params, **kwargs):
         """
         Compute p(y^{*}|x^{*}).
-        :param function_dist: q(f).
-        :return: p(y^{*}|x^{*}) = N(fw^(T), \epsilon), fw^(T) ~ N(E[fW^{t}], Var[fW^{t}]), Var[fW^{t}]=\sum_{n}[Sigma_{i}.
+        :param function_dist: q(f*).
+        :return: p(y^{*}|x^{*}) = N(fw^(T), \epsilon), fw^(T) ~ N(E[fW^{t}], Var[fW^{t}]),
+                 cov[fW^{t}]_{ij}= W\Sigma_{i*T:(i+1)*T, j*T:(j+1)*T}W^{T}.
         """
-        num_event_dim = function_dist.event_shape
         mean, covar = function_dist.mean, function_dist.lazy_covariance_matrix
-        mean = mean.resize(num_event_dim, self.num_features)
+        num_data = int(mean.shape[0]/self.num_features)
+        mean = mean.resize(num_data, self.num_features)
         mean = mean @ self.mixing_weights
 
-        covar_fw = covar[0:self.num_features, 0:self.num_features]
-        for i in range(num_event_dim-1):
-            i = i+1
-            covar_fw_tmp = covar[self.num_features*i:self.num_features*(i+1), self.num_features*i:self.num_features*(i+1)]
-            covar_fw += covar_fw_tmp
+        # Matrix form of the covariance matrix.
+        # left = [W, 0, 0, 0,
+        #         0, W, 0, 0,
+        #         0, 0, W, 0,
+        #         0, 0, 0, W] (N, N*T)
+        # middle = covar (N*T, N*T)
+        # right = [W^T, 0, 0, 0,
+        #          0, W^T, 0, 0,
+        #          0, 0, W^T, 0,
+        #          0, 0, 0, W^T] (N*T, N)
+
+        left_weight = torch.zeros(num_data, num_data*self.num_features)
+        for i in range(num_data):
+            left_weight[i, i*self.num_features:(i+1)*self.num_features] = self.mixing_weights.flatten()
+        right_weight = left_weight.transpose(-2, -1)
+        middle_term = self.prior_distribution.lazy_covariance_matrix  # I
+
+        if settings.trace_mode.on():
+            covar_fw = left_weight @ middle_term.evaluate() @ right_weight
+        else:
+            covar_fw = MatmulLazyTensor(left_weight, middle_term @ right_weight)
 
         noise_covar = self._shaped_noise_covar(mean.shape, *params, **kwargs)
         full_covar = covar_fw + noise_covar
