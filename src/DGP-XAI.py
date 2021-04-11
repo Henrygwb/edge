@@ -29,13 +29,14 @@ from gp_utils import CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood, 
 # Hyper-parameters
 HIDDENS = [10, 5, 1]
 NUM_INDUCING_POINTS = 20
-USING_SOR = False # Whether to use SoR approximation, not applicable for KSI and CIQ.
+USING_SOR = True # Whether to use SoR approximation, not applicable for KSI and CIQ.
 USING_KSI = False # Whether to use KSI approximation, using this with other options as False.
-USING_NGD = False # Whether to use natural gradient descent.
+USING_NGD = True # Whether to use natural gradient descent.
 USING_CIQ = False # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
-USING_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
+USING_OrthogonallyDecouple = True # Using together NGD may cause numerical issue.
 GRID_BOUNDS = [(-3, 3)] * HIDDENS[-1] * 2
-LIKELIHOOD_TYPE = 'regression' # 'classification'
+LIKELIHOOD_TYPE = 'classification'
+# LIKELIHOOD_TYPE = 'regression'
 RNN_CELL_TYPE = 'GRU' # 'LSTM'
 DROPOUT_RATE = 0.0
 NUM_CLASSES = 2
@@ -48,8 +49,13 @@ SAVE_PATH = None
 
 
 # load the dataset.
-train_set = torch.utils.data.TensorDataset(torch.randn(20, 10, 20), torch.randn(20).round().long()) # torch.round(): round to the closest int.
-test_set = torch.utils.data.TensorDataset(torch.randn(8, 10, 20), torch.randn(8).round().long()) # torch.long(): change the data type to int64.
+if LIKELIHOOD_TYPE == 'regression':
+    train_set = torch.utils.data.TensorDataset(torch.randn(20, 10, 20), torch.randn(20).round().long()) # torch.round(): round to the closest int.
+    test_set = torch.utils.data.TensorDataset(torch.randn(8, 10, 20), torch.randn(8).round().long()) # torch.long(): change the data type to int64.
+else:
+    train_set = torch.utils.data.TensorDataset(torch.randn(20, 10, 20), torch.rand(20).round().long()) # torch.round(): round to the closest int.
+    test_set = torch.utils.data.TensorDataset(torch.randn(8, 10, 20), torch.rand(8).round().long()) # torch.long(): change the data type to int64.
+
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=N_BATCHS, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=N_BATCHS, shuffle=False)
 train_x = train_set.tensors[0]
@@ -141,10 +147,13 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
         :param mean_inducing_points: mean inducing points, used for orthogonally decoupled VGP.
         """
         if USING_NGD:
+            print('Using Natural Gradient Descent.')
             if LIKELIHOOD_TYPE == 'regression':
+                print('Conjugate likelihood: using NaturalVariationalDistribution.')
                 variational_distribution = gpytorch.variational.NaturalVariationalDistribution(
                     num_inducing_points=inducing_points.size(0))
             else:
+                print('Non-conjugate likelihood: using TrilNaturalVariationalDistribution.')
                 variational_distribution = gpytorch.variational.TrilNaturalVariationalDistribution(
                     num_inducing_points=inducing_points.size(0))
         else:
@@ -152,11 +161,13 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
                 num_inducing_points=inducing_points.size(0))
 
         if USING_KSI:
+            print('Using KSI.')
             variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(
                 num_inducing_points=int(pow(NUM_INDUCING_POINTS, len(GRID_BOUNDS))))
             variational_strategy = gpytorch.variational.GridInterpolationVariationalStrategy(
                 self, NUM_INDUCING_POINTS, GRID_BOUNDS, variational_distribution)
         elif USING_CIQ:
+            print('Using CIQ.')
             variational_strategy = gpytorch.variational.CiqVariationalStrategy(
                 self, inducing_points, variational_distribution, learn_inducing_locations=True)
         else:
@@ -164,6 +175,7 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
                                                                  learning_inducing_locations=True,
                                                                  using_sor=USING_SOR)
         if USING_OrthogonallyDecouple:
+            print('Using Orthogonally Decouple.')
             variational_strategy = gpytorch.variational.OrthogonallyDecoupledVariationalStrategy(
                 variational_strategy, mean_inducing_points,
                 gpytorch.variational.DeltaVariationalDistribution(mean_inducing_points.size(-2)))

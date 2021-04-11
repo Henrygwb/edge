@@ -519,6 +519,7 @@ class CustomizedVariationalStrategy(_VariationalStrategy):
         # Compute the covariance of q(f)
         middle_term = self.prior_distribution.lazy_covariance_matrix # I
         if self.using_sor and self.training:
+            # print('Using SoR.')
             # K_XZ K_ZZ^{-1/2} S K_ZZ^{-1/2} K_ZX
             if variational_inducing_covar is not None:
                 middle_term = MatmulLazyTensor(variational_inducing_covar, middle_term)
