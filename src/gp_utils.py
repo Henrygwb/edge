@@ -173,7 +173,7 @@ class CustomizedSoftmaxLikelihood(Likelihood):
             function_samples = function_samples.transpose(-1, -2)
             num_data, num_features = function_samples.shape[-2:]
 
-        function_samples = function_samples.resize(function_samples.size(0),
+        function_samples = function_samples.view(function_samples.size(0),
                                                    num_data, self.num_features)
         # print('Check the shape of f, should be [n_likelihood_sample, n_traj, traj_length]:')
         # print(function_samples.shape)
@@ -262,20 +262,22 @@ class CustomizedGaussianLikelihood(Likelihood):
         :return: E_{f~q(f)}[log p(y|f)].
         """
         mean, covar = input.mean, input.covariance_matrix # mean and covar of q(f).
-        num_event_dim = len(input.event_shape)
+        # num_event_dim = len(input.event_shape)
         num_data = int(mean.shape[0]/self.num_features)
         noise = self._shaped_noise_covar(torch.Size([num_data]), *params, **kwargs).diag() # noise variance.
 
         # Potentially reshape the noise to deal with the multitask case
-        noise = noise.view(*noise.shape[:-1], *input.event_shape)
+        # noise = noise.view(*noise.shape[:-1], *input.event_shape)
         w_transpose = self.mixing_weights.transpose(-2, -1)
 
         # Computing N WE[f_{i}^{T}f_{i}]W^T with for loop.
-        # exp_ff = torch.zeros(num_data)
+        # exp_ff_1 = torch.zeros(num_data)
         # for i in range(num_data):
-        #     exp_ff[i] = covar[self.num_features*i:self.num_features*(i+1), self.num_features*i:self.num_features*(i+1)] \
-        #                 + mean[self.num_features*i:self.num_features*(i+1)] @ mean[self.num_features*i:self.num_features*(i+1)].transpose(-2, -1)
-        #     exp_ff[i] = self.mixing_weights @ exp_ff[i] @ w_transpose
+        #     exp_ff_tmp = covar[self.num_features * i:self.num_features * (i + 1),
+        #                  self.num_features * i:self.num_features * (i + 1)] \
+        #                  + mean[self.num_features * i:self.num_features * (i + 1)][:, None] @
+        #                  mean[self.num_features * i:self.num_features * (i + 1)][None, :]
+        #     exp_ff_1[i] = self.mixing_weights @ exp_ff_tmp @ w_transpose
 
         # Computing N WE[f_{i}^{T}f_{i}]W^T with matrix computation.
         # Suppose num_data = t
@@ -288,13 +290,19 @@ class CustomizedGaussianLikelihood(Likelihood):
 
         exp_ff = covar + mean[:, None] @ mean[None, :]
         left_weight = torch.zeros(num_data, num_data*self.num_features)
+        mask = torch.zeros(num_data, num_data*self.num_features)
         for i in range(num_data):
             left_weight[i, i*self.num_features:(i+1)*self.num_features] = self.mixing_weights.flatten()
-        right_weight = w_transpose.repeat(num_data)
-        exp_ff = left_weight @ exp_ff @ right_weight
+            mask[i, i*self.num_features:(i+1)*self.num_features] = torch.ones_like(self.mixing_weights.flatten())
+        right_weight = w_transpose.repeat(num_data, 1)
+        exp_ff = left_weight @ exp_ff
+        exp_ff = exp_ff * mask
+        exp_ff = exp_ff @ right_weight
 
-        mean_matrix = mean.resize(num_data, self.num_features)
+        mean_matrix = mean.view(num_data, self.num_features)
         mean_w = mean_matrix @ w_transpose
+        exp_ff = exp_ff.flatten()
+        mean_w = mean_w.flatten()
         exp_y_f = (target - mean_w)**2 + exp_ff
         res = (exp_y_f) / noise + noise.log() + math.log(2 * math.pi)
         res = res.mul(-0.5)
@@ -302,7 +310,7 @@ class CustomizedGaussianLikelihood(Likelihood):
         # matrix form: summation of res.
         # target_transpose = target.transpose(-2, -1)
         # exp_y_f = target_transpose @ target - self.mixing_weights @ mean_matrix_transpose @ target - \
-        #           target_transpose @ mean_matrix @ w_transpose - self.mixing_weights @ exp_ff @ w_transpose
+        #           target_transpose @ mean_matrix @ w_transpose - exp_ff.sum()
 
         return res * self.num_features # times seq_len, because the log_likelihood in _approximate_mll will divide (n_traj*seq_len).
 
@@ -313,7 +321,7 @@ class CustomizedGaussianLikelihood(Likelihood):
         :return: p(y|f).
         """
         num_data, num_features = function_samples.shape[-2:]
-        function_samples = function_samples.resize(function_samples.size(0),
+        function_samples = function_samples.view(function_samples.size(0),
                                                    num_data/self.num_features, self.num_features) # (N_sample, n, T)
         function_samples = function_samples @ self.mixing_weights # (N_sample, n, 1)
         noise = self._shaped_noise_covar(function_samples.shape, *params, **kwargs).diag()
@@ -346,9 +354,9 @@ class CustomizedGaussianLikelihood(Likelihood):
         """
         mean, covar = function_dist.mean, function_dist.lazy_covariance_matrix
         num_data = int(mean.shape[0]/self.num_features)
-        mean = mean.resize(num_data, self.num_features)
-        mean = mean @ self.mixing_weights
-
+        mean = mean.view(num_data, self.num_features)
+        mean = mean @ self.mixing_weights.transpose(-2, -1)
+        mean = mean.flatten()
         # Matrix form of the covariance matrix.
         # left = [W, 0, 0, 0,
         #         0, W, 0, 0,
@@ -364,12 +372,11 @@ class CustomizedGaussianLikelihood(Likelihood):
         for i in range(num_data):
             left_weight[i, i*self.num_features:(i+1)*self.num_features] = self.mixing_weights.flatten()
         right_weight = left_weight.transpose(-2, -1)
-        middle_term = self.prior_distribution.lazy_covariance_matrix  # I
 
         if settings.trace_mode.on():
-            covar_fw = left_weight @ middle_term.evaluate() @ right_weight
+            covar_fw = left_weight @ covar.evaluate() @ right_weight
         else:
-            covar_fw = MatmulLazyTensor(left_weight, middle_term @ right_weight)
+            covar_fw = MatmulLazyTensor(left_weight, covar @ right_weight)
 
         noise_covar = self._shaped_noise_covar(mean.shape, *params, **kwargs)
         full_covar = covar_fw + noise_covar
@@ -392,7 +399,6 @@ class CustomizedGaussianLikelihood(Likelihood):
         self.noise_covar.initialize(raw_noise=value)
 
 
-# todo: Customized variational strategy with trick 5 and 6.
 class CustomizedVariationalStrategy(_VariationalStrategy):
     """
     Implementation of our customized variational inference strategy.
@@ -511,10 +517,16 @@ class CustomizedVariationalStrategy(_VariationalStrategy):
         predictive_mean = (interp_term.transpose(-1, -2) @ inducing_values.unsqueeze(-1)).squeeze(-1) + test_mean
 
         # Compute the covariance of q(f)
-        # K_XX + k_XZ K_ZZ^{-1/2} (S - I) K_ZZ^{-1/2} k_ZX
-        middle_term = self.prior_distribution.lazy_covariance_matrix.mul(-1) # -I
-        if variational_inducing_covar is not None:
-            middle_term = SumLazyTensor(variational_inducing_covar, middle_term) # S-I
+        middle_term = self.prior_distribution.lazy_covariance_matrix # I
+        if self.using_sor and self.training:
+            # K_XZ K_ZZ^{-1/2} S K_ZZ^{-1/2} K_ZX
+            if variational_inducing_covar is not None:
+                middle_term = MatmulLazyTensor(variational_inducing_covar, middle_term)
+        else:
+            # K_XX + k_XZ K_ZZ^{-1/2} (S - I) K_ZZ^{-1/2} k_ZX
+            middle_term = self.prior_distribution.lazy_covariance_matrix.mul(-1)  # -I
+            if variational_inducing_covar is not None:
+                middle_term = SumLazyTensor(variational_inducing_covar, middle_term) # S-I
 
         if settings.trace_mode.on():
             predictive_covar = (
@@ -526,19 +538,6 @@ class CustomizedVariationalStrategy(_VariationalStrategy):
                 data_data_covar.add_jitter(1e-4),
                 MatmulLazyTensor(interp_term.transpose(-1, -2), middle_term @ interp_term),
             )
-
-        # K_XZ K_ZZ^{-1/2} S K_ZZ^{-1/2} K_ZX
-        if self.using_sor and self.training:
-            middle_term = self.prior_distribution.lazy_covariance_matrix  # I
-
-            if settings.trace_mode.on():
-                if variational_inducing_covar is not None:
-                    middle_term = variational_inducing_covar @ middle_term.evaluate()
-                predictive_covar = (interp_term.transpose(-1, -2) @ middle_term.evaluate() @ interp_term)
-            else:
-                if variational_inducing_covar is not None:
-                    middle_term = variational_inducing_covar @ middle_term
-                predictive_covar = MatmulLazyTensor(interp_term.transpose(-1, -2), middle_term @ interp_term)
 
         # Return the distribution
         return MultivariateNormal(predictive_mean, predictive_covar)

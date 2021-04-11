@@ -14,6 +14,8 @@
 # 8. Grid variational strategy with KSI.
 # (Faster way of computing K_{x,z} in p(f|u)) KISS-GP: Use the local kernel interpolation technique
 # (Structured kernel interpolation) to approximate K_{x,z}K_{z,z} with the interpolation matrix M.
+# 9. Orthogonally decoupled VGPs. Using a different set of inducing points for the mean and covariance functions.
+#    Use more inducing points for the mean and fewer inducing points for the covariance.
 
 import math
 import torch
@@ -25,13 +27,14 @@ import torch.optim as optim
 from gp_utils import CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood, CustomizedVariationalStrategy
 
 # Hyper-parameters
-HIDDENS = [10, 5, 3]
+HIDDENS = [10, 5, 1]
 NUM_INDUCING_POINTS = 20
-USING_SOR = False # Whether to use SoR approximation.
-USING_KSI = False # Whether to use KSI approximation.
+USING_SOR = False # Whether to use SoR approximation, not applicable for KSI and CIQ.
+USING_KSI = False # Whether to use KSI approximation, using this with other options as False.
 USING_NGD = False # Whether to use natural gradient descent.
 USING_CIQ = False # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
-GRID_BOUNDS = [(-10, 10)]
+USING_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
+GRID_BOUNDS = [(-3, 3)] * HIDDENS[-1] * 2
 LIKELIHOOD_TYPE = 'regression' # 'classification'
 RNN_CELL_TYPE = 'GRU' # 'LSTM'
 DROPOUT_RATE = 0.0
@@ -118,7 +121,7 @@ class RNNEncoder(nn.Module):
 
 # Build the GP layer.
 class GaussianProcessLayer(gpytorch.models.ApproximateGP):
-    def __init__(self, input_dim_step, input_dim_traj, inducing_points):
+    def __init__(self, input_dim_step, input_dim_traj, inducing_points, mean_inducing_points):
         """
         Define the mean and kernel function: Constant mean, and additive RBF kernel (step kernel + traj kernel).
         variational distribution: Cholesky Multivariate Gaussian q(u) ~ N(\mu, LL^T).
@@ -135,6 +138,7 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
         :param input_dim_step: step embedding dim.
         :param input_dim_traj: traj embedding dim.
         :param inducing_points: inducing points at the latent space (n, input_dim_step+input_dim_traj).
+        :param mean_inducing_points: mean inducing points, used for orthogonally decoupled VGP.
         """
         if USING_NGD:
             if LIKELIHOOD_TYPE == 'regression':
@@ -148,6 +152,8 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
                 num_inducing_points=inducing_points.size(0))
 
         if USING_KSI:
+            variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(
+                num_inducing_points=int(pow(NUM_INDUCING_POINTS, len(GRID_BOUNDS))))
             variational_strategy = gpytorch.variational.GridInterpolationVariationalStrategy(
                 self, NUM_INDUCING_POINTS, GRID_BOUNDS, variational_distribution)
         elif USING_CIQ:
@@ -157,6 +163,11 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
             variational_strategy = CustomizedVariationalStrategy(self, inducing_points, variational_distribution,
                                                                  learning_inducing_locations=True,
                                                                  using_sor=USING_SOR)
+        if USING_OrthogonallyDecouple:
+            variational_strategy = gpytorch.variational.OrthogonallyDecoupledVariationalStrategy(
+                variational_strategy, mean_inducing_points,
+                gpytorch.variational.DeltaVariationalDistribution(mean_inducing_points.size(-2)))
+
         super(GaussianProcessLayer, self).__init__(variational_strategy)
 
         self.mean_module = gpytorch.means.ConstantMean()
@@ -186,7 +197,8 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
 
 # Build the full model.
 class DGPXAIModel(gpytorch.Module):
-    def __init__(self, seq_len, input_dim, hiddens, num_inducing_points, inducing_points=None, dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
+    def __init__(self, seq_len, input_dim, hiddens, num_inducing_points, inducing_points=None,
+                 mean_inducing_points=None, dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
         """
         Define the full model.
         :param seq_len: trajectory length.
@@ -194,6 +206,7 @@ class DGPXAIModel(gpytorch.Module):
         :param hiddens: hidden layer dimentions.
         :param num_inducing_points: number of inducing points.
         :param inducing_points: inducing points at the latent space Z (num_inducing_points, 2*hiddens[-1]).
+        :param mean_inducing_points: mean inducing points, used for orthogonally decoupled VGP.
         :param dropout_rate: MLP dropout rate.
         :param rnn_cell_type: the RNN cell type.
         :param normalize: whether to normalize the input.
@@ -203,7 +216,10 @@ class DGPXAIModel(gpytorch.Module):
         self.encoder = RNNEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize)
         if inducing_points is None:
             inducing_points = torch.randn(num_inducing_points, 2*hiddens[-1])
-        self.gp_layer = GaussianProcessLayer(hiddens[-1], hiddens[-1], inducing_points)
+        if mean_inducing_points is None:
+            mean_inducing_points = torch.randn(num_inducing_points*5, 2*hiddens[-1])
+
+        self.gp_layer = GaussianProcessLayer(hiddens[-1], hiddens[-1], inducing_points, mean_inducing_points)
 
     def forward(self, x):
         """
@@ -215,7 +231,7 @@ class DGPXAIModel(gpytorch.Module):
         step_embedding, traj_embedding = self.encoder(x)  # (N, T, P) -> (N, T, D), (N, D).
         traj_embedding = traj_embedding[:, None, :].repeat(1, self.seq_len, 1) # (N, D) -> (N, T, D)
         features = torch.cat([step_embedding, traj_embedding], dim=-1) # (N, T, 2D)
-        features = features.reshape(x.size(0)*x.size(1), features.size(-1))
+        features = features.view(x.size(0)*x.size(1), features.size(-1))
         res = self.gp_layer(features)
         return res
 
@@ -263,6 +279,12 @@ if USING_NGD:
             {'params': model.encoder.parameters(), 'weight_decay': 1e-4},
             {'params': model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
             {'params': likelihood.parameters()}, ], lr=LR, weight_decay=0)
+    # Learning rate decay schedule.
+    scheduler = optim.lr_scheduler.MultiStepLR(variational_ngd_optimizer,
+                                               milestones=[0.5 * N_EPOCHS, 0.75 * N_EPOCHS], gamma=GAMMA)
+    scheduler = optim.lr_scheduler.MultiStepLR(hyperparameter_optimizer,
+                                               milestones=[0.5 * N_EPOCHS, 0.75 * N_EPOCHS], gamma=GAMMA)
+
 else:
     if OPTIMIZER == 'adam':
         optimizer = optim.Adam([
@@ -277,8 +299,8 @@ else:
             {'params': model.gp_layer.variational_parameters()},
             {'params': likelihood.parameters()}, ], lr=LR, momentum=0.9, nesterov=True, weight_decay=0)
 
-# Learning rate decay schedule.
-scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[0.5 * N_EPOCHS, 0.75 * N_EPOCHS], gamma=GAMMA)
+    # Learning rate decay schedule.
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[0.5 * N_EPOCHS, 0.75 * N_EPOCHS], gamma=GAMMA)
 
 
 # train function.
@@ -316,6 +338,8 @@ def test():
     likelihood.eval()
 
     correct = 0
+    mse = 0
+    mae = 0
     with torch.no_grad(), gpytorch.settings.num_likelihood_samples(16):
         for data, target in test_loader:
             if torch.cuda.is_available():
@@ -325,13 +349,17 @@ def test():
             if LIKELIHOOD_TYPE == 'classification':
                 pred = output.probs.mean(0).argmax(-1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
                 correct += pred.eq(target.view_as(pred)).cpu().sum()
-                print('Test set: Accuracy: {}/{} ({}%)'.format(
-                    correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
-                ))
             else:
                 preds = output.mean
-                print('Test MAE: {}'.format(torch.mean(torch.abs(preds - target))))
-                print('Test MAE: {}'.format(torch.mean(torch.square(preds - target))))
+                mae += torch.sum(torch.abs(preds - target))
+                mse += torch.sum(torch.square(preds - target))
+        if LIKELIHOOD_TYPE == 'classification':
+            print('Test set: Accuracy: {}/{} ({}%)'.format(
+                correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
+            ))
+        else:
+            print('Test MAE: {}'.format(mae/float(len(test_loader.dataset))))
+            print('Test MSE: {}'.format(mse/float(len(test_loader.dataset))))
 
 
 if __name__ == '__main__':
