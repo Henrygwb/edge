@@ -3,15 +3,18 @@
 import math
 import torch
 import warnings
+import numpy as np
+import seaborn as sns
 import torch.nn as nn
+from matplotlib import pyplot as plt
 from gpytorch.likelihoods.likelihood import Likelihood
-from gpytorch.distributions import Distribution, MultitaskMultivariateNormal, base_distributions, MultivariateNormal
+from gpytorch.distributions import base_distributions, MultivariateNormal
 from gpytorch.likelihoods.noise_models import HomoskedasticNoise
 from gpytorch import settings
 from gpytorch.utils.errors import CachingError
-from gpytorch.utils.warnings import OldVersionWarning
 from gpytorch.utils.cholesky import psd_safe_cholesky
 from gpytorch.variational._variational_strategy import _VariationalStrategy
+from gpytorch.variational.variational_strategy import _ensure_updated_strategy_flag_set
 from gpytorch.utils.memoize import cached, clear_cache_hook, pop_from_cache_ignore_args
 from gpytorch.lazy import DiagLazyTensor, MatmulLazyTensor, RootLazyTensor, SumLazyTensor, TriangularLazyTensor, delazify
 
@@ -430,28 +433,13 @@ class CustomizedVariationalStrategy(_VariationalStrategy):
         super(CustomizedVariationalStrategy, self).__init__(model, inducing_points, variational_distribution,
                                                             learning_inducing_locations)
         self.register_buffer("updated_strategy", torch.tensor(True))
-        self._register_load_state_dict_pre_hook(self._ensure_updated_strategy_flag_set)
         self.using_sor = using_sor
+        self._register_load_state_dict_pre_hook(_ensure_updated_strategy_flag_set)
 
     @cached(name="cholesky_factor", ignore_args=True)
     def _cholesky_factor(self, induc_induc_covar):
         L = psd_safe_cholesky(delazify(induc_induc_covar).double())
         return TriangularLazyTensor(L)
-
-    @ staticmethod
-    def _ensure_updated_strategy_flag_set(
-        self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
-    ):
-        device = state_dict[list(state_dict.keys())[0]].device
-        if prefix + "updated_strategy" not in state_dict:
-            state_dict[prefix + "updated_strategy"] = torch.tensor(False, device=device)
-            warnings.warn(
-                "You have loaded a variational GP model (using `VariationalStrategy`) from a previous version of "
-                "GPyTorch. We have updated the parameters of your model to work with the new version of "
-                "`VariationalStrategy` that uses whitened parameters.\nYour model will work as expected, but we "
-                "recommend that you re-save your model.",
-                OldVersionWarning,
-            )
 
     @property
     @cached(name="prior_distribution_memo")
@@ -591,3 +579,20 @@ class CustomizedVariationalStrategy(_VariationalStrategy):
                 self.updated_strategy.fill_(True)
 
         return super().__call__(x, prior=prior, **kwargs)
+
+
+def VisualizeCovar(covariance, save_path):
+    plt.figure()
+    heat = sns.heatmap(
+        covariance,
+        cmap="YlGnBu",
+        square=True,
+        robust=True,
+        xticklabels=False,
+        yticklabels=False,
+    )
+    plt.show()
+    if save_path[-3:] != 'pdf':
+        raise TypeError('Output format shoud be pdf.')
+    heat.savefig(save_path, bbox_inches='tight')
+    return 0

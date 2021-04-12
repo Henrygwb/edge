@@ -24,16 +24,17 @@ import gpytorch
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
-from gp_utils import CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood, CustomizedVariationalStrategy
+from gp_utils import CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood, \
+    CustomizedVariationalStrategy, VisualizeCovar
 
 # Hyper-parameters
-HIDDENS = [10, 5, 1]
+HIDDENS = [10, 5, 3]
 NUM_INDUCING_POINTS = 20
-USING_SOR = True # Whether to use SoR approximation, not applicable for KSI and CIQ.
+USING_SOR = False # Whether to use SoR approximation, not applicable for KSI and CIQ.
 USING_KSI = False # Whether to use KSI approximation, using this with other options as False.
-USING_NGD = True # Whether to use natural gradient descent.
+USING_NGD = False # Whether to use natural gradient descent.
 USING_CIQ = False # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
-USING_OrthogonallyDecouple = True # Using together NGD may cause numerical issue.
+USING_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
 GRID_BOUNDS = [(-3, 3)] * HIDDENS[-1] * 2
 LIKELIHOOD_TYPE = 'classification'
 # LIKELIHOOD_TYPE = 'regression'
@@ -45,8 +46,8 @@ N_BATCHS = 4
 LR = 0.01
 OPTIMIZER = 'adam' # 'sgd'
 GAMMA = 0.1 # LR decay multiplicative factor.
-SAVE_PATH = None
-
+SAVE_PATH = ' '
+LOAD_PATH = 'checkpoint.data'
 
 # load the dataset.
 if LIKELIHOOD_TYPE == 'regression':
@@ -174,6 +175,7 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
             variational_strategy = CustomizedVariationalStrategy(self, inducing_points, variational_distribution,
                                                                  learning_inducing_locations=True,
                                                                  using_sor=USING_SOR)
+
         if USING_OrthogonallyDecouple:
             print('Using Orthogonally Decouple.')
             variational_strategy = gpytorch.variational.OrthogonallyDecoupledVariationalStrategy(
@@ -374,16 +376,49 @@ def test():
             print('Test MSE: {}'.format(mse/float(len(test_loader.dataset))))
 
 
+def get_explanations(data, model, likelihood):
+    if len(data.shape) == 2:
+        data = data[None,:,:]
+    importance = likelihood.mixing_weights
+    step_embedding, traj_embedding = model.encoder(data)  # (N, T, P) -> (N, T, D), (N, D).
+    traj_embedding = traj_embedding[:, None, :].repeat(1, data.shape[1], 1)  # (N, D) -> (N, T, D)
+    features = torch.cat([step_embedding, traj_embedding], dim=-1)  # (N, T, 2D)
+    features = features.view(data.size(0) * data.size(1), features.size(-1))
+    covar_all = model.gp_layer.covar_module(features)
+    covar_step = model.gp_layer.ste_kernel(features)
+    covar_traj = model.gp_layer.traj_kernel(features)
+    # TODO: combine importance weight with covariance structure.
+
+    return importance, (covar_all, covar_traj, covar_step)
+
+
 if __name__ == '__main__':
+    # Load a pretrained model.
+    if LOAD_PATH:
+        dicts = torch.load(LOAD_PATH)
+        model_dict = dicts['model']
+        likelihood_dict = dicts['likelihood']
+        model.load_state_dict(model_dict)
+        likelihood.load_state_dict(likelihood_dict)
+
+    # Train, evaluate, and save a model.
     for epoch in range(1, N_EPOCHS + 1):
         with gpytorch.settings.use_toeplitz(False):
             train(epoch)
             test()
         scheduler.step()
+
+    # Get the explanations and covariance.
+    importance, covariance = get_explanations(data=train_x, model=model, likelihood=likelihood)
+
     if SAVE_PATH:
         state_dict = model.state_dict()
         likelihood_state_dict = likelihood.state_dict()
-        torch.save({'model': state_dict, 'likelihood': likelihood_state_dict}, SAVE_PATH)
+        torch.save({'model': state_dict, 'likelihood': likelihood_state_dict}, SAVE_PATH+'/checkpoint.data')
+        VisualizeCovar(covariance[0], SAVE_PATH+'/full_covar.pdf')
+        VisualizeCovar(covariance[1], SAVE_PATH+'/traj_covar.pdf')
+        VisualizeCovar(covariance[2], SAVE_PATH+'/step_covar.pdf')
+
 
 # All the keys in the state_dict.
 # encoder.mlp_encoder.mlp_0.weight (\Theta_1)
