@@ -69,7 +69,7 @@ class RNNEncoder(nn.Module):
         """
         RNN structure (MLP+seq2seq) (\theta_1: RNN parameters).
         :param seq_len: trajectory length.
-        :param input_dim: the dimensionality of the
+        :param input_dim: the dimensionality of the input (Concatenate of observation and action)
         :param hiddens: hidden layer dimensions.
         :param dropout_rate: dropout rate.
         :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
@@ -210,7 +210,7 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
 
 
 # Build the full model.
-class DGPXAIModel(gpytorch.Module):
+class DGPXRLModel(gpytorch.Module):
     def __init__(self, seq_len, input_dim, hiddens, num_inducing_points, inducing_points=None,
                  mean_inducing_points=None, dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
         """
@@ -250,174 +250,251 @@ class DGPXAIModel(gpytorch.Module):
         return res
 
 
-# Build the likelihood layer (Regression and classification).
-if LIKELIHOOD_TYPE == 'regression':
-    print('Conduct regression and use GaussianLikelihood')
-    likelihood = CustomizedGaussianLikelihood(num_features=train_x.size(1))
-elif LIKELIHOOD_TYPE == 'classification':
-    print('Conduct classification and use softmaxLikelihood')
-    likelihood = CustomizedSoftmaxLikelihood(num_features=train_x.size(1), num_classes=NUM_CLASSES)
-else:
-    print('Default choice is regression and use GaussianLikelihood')
-    likelihood = CustomizedGaussianLikelihood(num_features=train_x.size(1))
+class DGPXRL(object):
+    def __init__(self, train_loader, seq_len, input_dim, hiddens, likelihood_type, lr, optimizer_type, n_epoch, gamma,
+                 num_inducing_points, inducing_points=None, mean_inducing_points=None, dropout_rate=0.25,
+                 rnn_cell_type='GRU', normalize=False):
+        """
+        Define the full model.
+        :param train_loader: training data loader.
+        :param seq_len: trajectory length.
+        :param input_dim: input state/action dimension.
+        :param hiddens: hidden layer dimentions.
+        :param likelihood_type: likelihood type.
+        :param lr: learning rate.
+        :param optimizer_type.
+        :param n_epoch.
+        :param gamma.
+        :param num_inducing_points: number of inducing points.
+        :param inducing_points: inducing points at the latent space Z (num_inducing_points, 2*hiddens[-1]).
+        :param mean_inducing_points: mean inducing points, used for orthogonally decoupled VGP.
+        :param dropout_rate: MLP dropout rate.
+        :param rnn_cell_type: the RNN cell type.
+        :param normalize: whether to normalize the input.
+        """
+        self.train_loader = train_loader
+        self.likelihood_type = likelihood_type
+        self.lr = lr
+        self.optimizer_type = optimizer_type
+        self.n_epoch = n_epoch
+        self.gamma = gamma
 
-# Compute the loss (ELBO) likelihood + KL divergence.
-model = DGPXAIModel(seq_len=train_x.size(1), input_dim=train_x.size(2), hiddens=HIDDENS, dropout_rate=DROPOUT_RATE,
-                    num_inducing_points=NUM_INDUCING_POINTS)
-print(model)
-# First, sampling from q(f) with shape [n_sample, n_data].
-# Then, the likelihood function times it with the mixing weight and get the marginal likelihood distribution p(y|f).
-# VariationalELBO will call _ApproximateMarginalLogLikelihood, which will then compute the marginal likelihood by
-# calling the likelihood function (the expected_log_prob in the likelihood class)
-# and the KL divergence (VariationalStrategy.kl_divergence()).
-# ELBO = E_{q(f)}[p(y|f)] - KL[q(u)||p(u)].
-mll = gpytorch.mlls.VariationalELBO(likelihood, model.gp_layer, num_data=len(train_loader.dataset))
-
-if torch.cuda.is_available():
-    model = model.cuda()
-    likelihood = likelihood.cuda()
-
-# Define the optimizer over the parameters
-# (RNN parameters, RBF kernel parameters, Z, variational parameters, mixing weight).
-
-if USING_NGD:
-    variational_ngd_optimizer = gpytorch.optim.NGD(model.gp_layer.variational_parameters(),
-                                                   num_data=train_y.size(0), lr=LR*10)
-    if OPTIMIZER == 'adam':
-        hyperparameter_optimizer = optim.Adam([
-            {'params': model.encoder.parameters(), 'weight_decay': 1e-4},
-            {'params': model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
-            {'params': likelihood.parameters()}, ], lr=LR, weight_decay=0)
-    else:
-        hyperparameter_optimizer = optim.SGD([
-            {'params': model.encoder.parameters(), 'weight_decay': 1e-4},
-            {'params': model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
-            {'params': likelihood.parameters()}, ], lr=LR, weight_decay=0)
-    # Learning rate decay schedule.
-    scheduler = optim.lr_scheduler.MultiStepLR(variational_ngd_optimizer,
-                                               milestones=[0.5 * N_EPOCHS, 0.75 * N_EPOCHS], gamma=GAMMA)
-    scheduler = optim.lr_scheduler.MultiStepLR(hyperparameter_optimizer,
-                                               milestones=[0.5 * N_EPOCHS, 0.75 * N_EPOCHS], gamma=GAMMA)
-
-else:
-    if OPTIMIZER == 'adam':
-        optimizer = optim.Adam([
-            {'params': model.encoder.parameters(), 'weight_decay': 1e-4},
-            {'params': model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
-            {'params': model.gp_layer.variational_parameters()},
-            {'params': likelihood.parameters()}, ], lr=LR, weight_decay=0)
-    else:
-        optimizer = optim.SGD([
-            {'params': model.encoder.parameters(), 'weight_decay': 1e-4},
-            {'params': model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
-            {'params': model.gp_layer.variational_parameters()},
-            {'params': likelihood.parameters()}, ], lr=LR, momentum=0.9, nesterov=True, weight_decay=0)
-
-    # Learning rate decay schedule.
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[0.5 * N_EPOCHS, 0.75 * N_EPOCHS], gamma=GAMMA)
-
-
-# train function.
-def train(epoch):
-    # specify the mode of the modules in the model; some modules may have different behaviors under training and eval
-    # module, such as dropout and batch normalization.
-    model.train()
-    likelihood.train()
-
-    minibatch_iter = tqdm.tqdm(train_loader, desc=f"(Epoch {epoch}) Minibatch")
-    with gpytorch.settings.num_likelihood_samples(8):
-        for data, target in minibatch_iter:
-            if torch.cuda.is_available():
-                data, target = data.cuda(), target.cuda()
-            if USING_NGD:
-                variational_ngd_optimizer.zero_grad()
-                hyperparameter_optimizer.zero_grad()
-            else:
-                optimizer.zero_grad()
-            output = model(data) # marginal variational posterior, q(f|x).
-            loss = -mll(output, target) # approximated ELBO.
-            loss.backward()
-            if USING_NGD:
-                variational_ngd_optimizer.step()
-                hyperparameter_optimizer.step()
-            else:
-                optimizer.step()
-            minibatch_iter.set_postfix(loss=loss.item())
-
-
-# test function.
-def test():
-    # Specify that the model is in eval mode.
-    model.eval()
-    likelihood.eval()
-
-    correct = 0
-    mse = 0
-    mae = 0
-    with torch.no_grad(), gpytorch.settings.num_likelihood_samples(16):
-        for data, target in test_loader:
-            if torch.cuda.is_available():
-                data, target = data.cuda(), target.cuda()
-            f_predicted = model(data)
-            output = likelihood(f_predicted)  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
-            if LIKELIHOOD_TYPE == 'classification':
-                pred = output.probs.mean(0).argmax(-1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
-                correct += pred.eq(target.view_as(pred)).cpu().sum()
-            else:
-                preds = output.mean
-                mae += torch.sum(torch.abs(preds - target))
-                mse += torch.sum(torch.square(preds - target))
-        if LIKELIHOOD_TYPE == 'classification':
-            print('Test set: Accuracy: {}/{} ({}%)'.format(
-                correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
-            ))
+        # Build the likelihood layer (Regression and classification).
+        if self.likelihood_type == 'regression':
+            print('Conduct regression and use GaussianLikelihood')
+            self.likelihood = CustomizedGaussianLikelihood(num_features=train_x.size(1))
+        elif self.likelihood_type == 'classification':
+            print('Conduct classification and use softmaxLikelihood')
+            self.likelihood = CustomizedSoftmaxLikelihood(num_features=train_x.size(1), num_classes=NUM_CLASSES)
         else:
-            print('Test MAE: {}'.format(mae/float(len(test_loader.dataset))))
-            print('Test MSE: {}'.format(mse/float(len(test_loader.dataset))))
+            print('Default choice is regression and use GaussianLikelihood')
+            self.likelihood = CustomizedGaussianLikelihood(num_features=train_x.size(1))
 
+        # Compute the loss (ELBO) likelihood + KL divergence.
+        self.model = DGPXRLModel(seq_len=seq_len, input_dim=input_dim, hiddens=hiddens, dropout_rate=dropout_rate,
+                                 num_inducing_points=num_inducing_points, inducing_points=inducing_points,
+                                 mean_inducing_points=mean_inducing_points, rnn_cell_type=rnn_cell_type,
+                                 normalize=normalize)
+        print(self.model)
 
-def get_explanations(data, model, likelihood):
-    if len(data.shape) == 2:
-        data = data[None,:,:]
-    importance = likelihood.mixing_weights
-    step_embedding, traj_embedding = model.encoder(data)  # (N, T, P) -> (N, T, D), (N, D).
-    traj_embedding = traj_embedding[:, None, :].repeat(1, data.shape[1], 1)  # (N, D) -> (N, T, D)
-    features = torch.cat([step_embedding, traj_embedding], dim=-1)  # (N, T, 2D)
-    features = features.view(data.size(0) * data.size(1), features.size(-1))
-    covar_all = model.gp_layer.covar_module(features)
-    covar_step = model.gp_layer.ste_kernel(features)
-    covar_traj = model.gp_layer.traj_kernel(features)
-    # TODO: combine importance weight with covariance structure.
+        # First, sampling from q(f) with shape [n_sample, n_data].
+        # Then, the likelihood function times it with the mixing weight and get the marginal likelihood p(y|f).
+        # VariationalELBO will call _ApproximateMarginalLogLikelihood, which then computes the marginal likelihood by
+        # calling the likelihood function (the expected_log_prob in the likelihood class)
+        # and the KL divergence (VariationalStrategy.kl_divergence()).
+        # ELBO = E_{q(f)}[p(y|f)] - KL[q(u)||p(u)].
+        self.mll = gpytorch.mlls.VariationalELBO(self.likelihood, self.model.gp_layer,
+                                                 num_data=len(train_loader.dataset))
 
-    return importance, (covar_all, covar_traj, covar_step)
+        # Define the optimizer over the parameters.
+        # (RNN parameters, RBF kernel parameters, Z, variational parameters, mixing weight).
+        if USING_NGD:
+            self.variational_ngd_optimizer = gpytorch.optim.NGD(self.model.gp_layer.variational_parameters(),
+                                                                num_data=len(train_loader.dataset), lr=LR*10)
+            if self.optimizer_type == 'adam':
+                self.hyperparameter_optimizer = optim.Adam([
+                    {'params': self.model.encoder.parameters(), 'weight_decay': 1e-4},
+                    {'params': self.model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
+                    {'params': self.likelihood.parameters()}, ], lr=LR, weight_decay=0)
+            else:
+                self.hyperparameter_optimizer = optim.SGD([
+                    {'params': self.model.encoder.parameters(), 'weight_decay': 1e-4},
+                    {'params': self.model.gp_layer.hyperparameters(), 'lr': LR * 0.01},
+                    {'params': self.likelihood.parameters()}, ], lr=LR, weight_decay=0)
+            # Learning rate decay schedule.
+            self.scheduler = optim.lr_scheduler.MultiStepLR(self.variational_ngd_optimizer,
+                                                            milestones=[0.5 * self.n_epoch, 0.75 * self.n_epoch],
+                                                            gamma=self.gamma)
+            self.scheduler = optim.lr_scheduler.MultiStepLR(self.hyperparameter_optimizer,
+                                                            milestones=[0.5 * self.n_epoch, 0.75 * self.n_epoch],
+                                                            gamma=self.gamma)
+        else:
+            if OPTIMIZER == 'adam':
+                self.optimizer = optim.Adam([
+                    {'params': self.model.encoder.parameters(), 'weight_decay': 1e-4},
+                    {'params': self.model.gp_layer.hyperparameters(), 'lr': self.lr * 0.01},
+                    {'params': self.model.gp_layer.variational_parameters()},
+                    {'params': self.likelihood.parameters()}, ], lr=self.lr, weight_decay=0)
+            else:
+                self.optimizer = optim.SGD([
+                    {'params': self.model.encoder.parameters(), 'weight_decay': 1e-4},
+                    {'params': self.model.gp_layer.hyperparameters(), 'lr': self.lr * 0.01},
+                    {'params': self.model.gp_layer.variational_parameters()},
+                    {'params': self.likelihood.parameters()}, ], lr=self.lr,
+                    momentum=0.9, nesterov=True, weight_decay=0)
 
+            # Learning rate decay schedule.
+            self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizer,
+                                                            milestones=[0.5 * self.n_epoch, 0.75 * self.n_epoch],
+                                                            gamma=self.gamma)
 
-if __name__ == '__main__':
+        if torch.cuda.is_available():
+            self.model = self.model.cuda()
+            self.likelihood = self.likelihood.cuda()
+
     # Load a pretrained model.
-    if LOAD_PATH:
+    def load(self, load_path):
+        """
+        :param load_path: load model path.
+        :return: model, likelihood.
+        """
         dicts = torch.load(LOAD_PATH)
         model_dict = dicts['model']
         likelihood_dict = dicts['likelihood']
-        model.load_state_dict(model_dict)
-        likelihood.load_state_dict(likelihood_dict)
+        self.model.load_state_dict(model_dict)
+        self.likelihood.load_state_dict(likelihood_dict)
+        return self.model, self.likelihood
 
-    # Train, evaluate, and save a model.
-    for epoch in range(1, N_EPOCHS + 1):
-        with gpytorch.settings.use_toeplitz(False):
-            train(epoch)
-            test()
-        scheduler.step()
+    def save(self, save_path):
+        state_dict = self.model.state_dict()
+        likelihood_state_dict = self.likelihood.state_dict()
+        torch.save({'model': state_dict, 'likelihood': likelihood_state_dict}, SAVE_PATH + '/checkpoint.data')
+        return 0
+
+    # train function.
+    def train(self, save_path=None, likelihood_sample_size=8):
+
+        # specify the mode of the modules in the model; some modules may have different behaviors under training and eval
+        # module, such as dropout and batch normalization.
+        self.model.train()
+        self.likelihood.train()
+
+        for epoch in range(1, N_EPOCHS + 1):
+            mse = 0
+            mae = 0
+            correct = 0
+            with gpytorch.settings.use_toeplitz(False):
+                minibatch_iter = tqdm.tqdm(train_loader, desc=f"(Epoch {epoch}) Minibatch")
+                with gpytorch.settings.num_likelihood_samples(likelihood_sample_size):
+                    for data, target in minibatch_iter:
+                        if torch.cuda.is_available():
+                            data, target = data.cuda(), target.cuda()
+                        if USING_NGD:
+                            self.variational_ngd_optimizer.zero_grad()
+                            self.hyperparameter_optimizer.zero_grad()
+                        else:
+                            self.optimizer.zero_grad()
+                        output = self.model(data)  # marginal variational posterior, q(f|x).
+                        loss = -self.mll(output, target)  # approximated ELBO.
+                        loss.backward()
+                        if USING_NGD:
+                            self.variational_ngd_optimizer.step()
+                            self.hyperparameter_optimizer.step()
+                        else:
+                            self.optimizer.step()
+
+                        if self.likelihood_type == 'classification':
+                            _, preds = torch.max(preds, 1)
+                            correct += preds.eq(target.view_as(preds)).cpu().sum()
+                        else:
+                            mae += torch.sum(torch.abs(preds - target))
+                            mse += torch.sum(torch.square(preds - target))
+                        minibatch_iter.set_postfix(loss=loss.item())
+
+                    if self.likelihood_type == 'classification':
+                        print('Test set: Accuracy: {}/{} ({}%)'.format(
+                            correct, len(train_loader.dataset), 100. * correct / float(len(self.train_loader.dataset))
+                        ))
+                    else:
+                        print('Test MAE: {}'.format(mae / float(len(self.train_loader.dataset))))
+                        print('Test MSE: {}'.format(mse / float(len(self.train_loader.dataset))))
+
+            self.scheduler.step()
+
+        if save_path:
+            self.save(save_path)
+        return self.model
+
+    # test function.
+    def test(self, test_loader, likelihood_sample_size=16):
+        # Specify that the model is in eval mode.
+        self.model.eval()
+        self.likelihood.eval()
+
+        correct = 0
+        mse = 0
+        mae = 0
+        with torch.no_grad(), gpytorch.settings.num_likelihood_samples(likelihood_sample_size):
+            for data, target in test_loader:
+                if torch.cuda.is_available():
+                    data, target = data.cuda(), target.cuda()
+                f_predicted = self.model(data)
+                output = self.likelihood(f_predicted)  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
+                if self.likelihood_type == 'classification':
+                    pred = output.probs.mean(0).argmax(-1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
+                    correct += pred.eq(target.view_as(pred)).cpu().sum()
+                else:
+                    preds = output.mean
+                    mae += torch.sum(torch.abs(preds - target))
+                    mse += torch.sum(torch.square(preds - target))
+            if self.likelihood_type == 'classification':
+                print('Test set: Accuracy: {}/{} ({}%)'.format(
+                    correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
+                ))
+            else:
+                print('Test MAE: {}'.format(mae/float(len(test_loader.dataset))))
+                print('Test MSE: {}'.format(mse/float(len(test_loader.dataset))))
+
+    def get_explanations(self, data, normalize=True):
+        self.model.eval()
+        self.likelihood.eval()
+
+        if len(data.shape) == 2:
+            data = data[None,:,:]
+        importance = self.likelihood.mixing_weights
+        step_embedding, traj_embedding = self.model.encoder(data)  # (N, T, P) -> (N, T, D), (N, D).
+        traj_embedding = traj_embedding[:, None, :].repeat(1, data.shape[1], 1)  # (N, D) -> (N, T, D)
+        features = torch.cat([step_embedding, traj_embedding], dim=-1)  # (N, T, 2D)
+        features = features.view(data.size(0) * data.size(1), features.size(-1))
+        covar_all = self.model.gp_layer.covar_module(features)
+        covar_step = self.model.gp_layer.ste_kernel(features)
+        covar_traj = self.model.gp_layer.traj_kernel(features)
+        # TODO: combine importance weight with covariance structure.
+        importance += importance[:, None] / importance.shape[1]
+        if normalize:
+            importance = (importance - np.min(importance, axis=1)[:, None])
+            importance = importance / (np.max(importance, axis=1)[:, None] - np.min(importance, axis=1)[:, None])
+
+        return importance, (covar_all, covar_traj, covar_step)
+
+
+if __name__ == '__main__':
+    explainer = DGPXRL(train_loader=train_loader, seq_len=train_x.size(1), input_dim=train_x.size(2), hiddens=HIDDENS,
+                       likelihood_type=LIKELIHOOD_TYPE, lr=LR, optimizer_type=OPTIMIZER, n_epoch=N_EPOCHS, gamma=GAMMA,
+                       dropout_rate=DROPOUT_RATE, num_inducing_points=NUM_INDUCING_POINTS)
+
+    if LOAD_PATH:
+        explainer.load(LOAD_PATH)
+
+    explainer.train(save_path=SAVE_PATH)
+    explainer.test(test_loader)
 
     # Get the explanations and covariance.
-    importance, covariance = get_explanations(data=train_x, model=model, likelihood=likelihood)
+    importance, covariance = explainer.get_explanations(data=train_x)
 
-    if SAVE_PATH:
-        state_dict = model.state_dict()
-        likelihood_state_dict = likelihood.state_dict()
-        torch.save({'model': state_dict, 'likelihood': likelihood_state_dict}, SAVE_PATH+'/checkpoint.data')
-        VisualizeCovar(covariance[0], SAVE_PATH+'/full_covar.pdf')
-        VisualizeCovar(covariance[1], SAVE_PATH+'/traj_covar.pdf')
-        VisualizeCovar(covariance[2], SAVE_PATH+'/step_covar.pdf')
+    VisualizeCovar(covariance[0], SAVE_PATH+'/full_covar.pdf')
+    VisualizeCovar(covariance[1], SAVE_PATH+'/traj_covar.pdf')
+    VisualizeCovar(covariance[2], SAVE_PATH+'/step_covar.pdf')
 
 
 # All the keys in the state_dict.
