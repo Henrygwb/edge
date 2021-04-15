@@ -9,7 +9,7 @@ import torch.nn.functional as F
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-class RnnModel(nn.Module):
+class RnnEncoder(nn.Module):
     def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU', use_input_attention=False,
                  normalize=False):
         """
@@ -22,7 +22,7 @@ class RnnModel(nn.Module):
         :param use_input_attention: Whether to use the input cell attention.
         :param normalize: whether to normalize the inputs.
         """
-        super(RnnModel, self).__init__()
+        super(RnnEncoder, self).__init__()
         self.normalize = normalize
         self.seq_len = seq_len
         self.input_dim = input_dim
@@ -253,3 +253,48 @@ class GRUWithInputCellAttention(LSTMWithInputCellAttention):
 
         hidden_seq = hidden_seq.transpose(Dim.batch, Dim.seq).contiguous()
         return hidden_seq, h_t
+
+
+class TanhAttention(nn.Module):
+    def __init__(self, input_dim, hidden_size):
+        """
+        :param input_dim: input dim.
+        :param hidden_size: hidden size.
+        """
+        super().__init__()
+        self.attn1 = nn.Linear(input_dim, hidden_size)
+        self.attn2 = nn.Linear(hidden_size, 1, bias=False)
+
+    def forward(self, x):
+        """
+        :param x: X (B, L, D)
+        :return: attn * X (B, D)
+        """
+
+        attn1 = torch.tanh(self.attn1(x)) # (B, L, H)
+        attn2 = self.attn2(attn1) # (B, L, 1)
+        attn = torch.softmax(attn2, 1) # (B, L, 1)
+        attn_applied = (attn * x).sum(1) # (B, D)
+
+        return attn, attn_applied
+
+
+class DotAttention(nn.Module):
+    def __init__(self, input_dim):
+        """
+        :param input_dim: input dim.
+        """
+        super().__init__()
+        self.attn1 = nn.Linear(input_dim, 1, bias=False)
+        self.input_dim = input_dim
+
+    def forward(self, x):
+        """
+        :param x: X (B, L, D)
+        :return: attn * X (B, D)
+        """
+        attn1 = self.attn1(x) / (self.input_dim)**0.5 # (B, L, 1)
+        attn = torch.softmax(attn1, 1) # (B, L, 1)
+        attn_applied = (attn * x).sum(1) # (B, D)
+
+        return attn, attn_applied
