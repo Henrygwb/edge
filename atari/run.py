@@ -62,7 +62,6 @@ def run_agent(args, model=None, env=None):
         for arr in all_arr:
             padding_amt = max_ep_length - len(arr)
             elem = arr[-1]
-            padding_elem = np.zeros_like(elem)
             arr.extend([np.zeros_like(elem) for _ in range(padding_amt)])
 
     all_obs = np.array(all_obs).squeeze()
@@ -81,7 +80,7 @@ def run_agent(args, model=None, env=None):
     }
 
     with open(Path(args.log_dir)/'data.npz', 'wb') as f:
-        np.savez_compressed(f, observations=all_obs, actions=all_acts, rewards=all_rewards)
+        np.savez_compressed(f, **save_dict)
 
 if __name__ == '__main__':
     args = get_args()
