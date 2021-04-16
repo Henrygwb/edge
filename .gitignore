@@ -6,3 +6,4 @@ logs/
 .vscode
 .DS_Store
 __pycache__/
+/src/explainer/ref_code/
