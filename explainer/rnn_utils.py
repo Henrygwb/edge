@@ -298,3 +298,94 @@ class DotAttention(nn.Module):
         attn_applied = (attn * x).sum(1) # (B, D)
 
         return attn, attn_applied
+
+
+class RationaleNetGenerator(nn.Module):
+    def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU', use_input_attention=False,
+                 normalize=False):
+        super(RationaleNetGenerator, self).__init__()
+        self.encoder = RnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, use_input_attention,
+                                  normalize)
+        self.z_dim = 2
+        self.hidden = nn.Linear(hiddens[-1], self.z_dim)
+        if torch.cuda.is_available():
+            self.cuda = True
+        else:
+            self.cuda = False
+
+    @staticmethod
+    def gumbel_softmax(input, temperature=1.0 / 10.0, cuda=False):
+        """
+        Concrete distribution q(z) = \prod_i z_i.
+        :param input: z [B, L, 2]
+        :param temperature: temp.
+        :param cuda: cuda.
+        :return: p: [B, L, 2], where [i, j, :] = [a1, a2], a1 + a2 = 1.
+        """
+        noise = torch.rand(input.size())
+        noise.add_(1e-9).log_().neg_()
+        noise.add_(1e-9).log_().neg_()
+        noise = torch.autograd.Variable(noise)
+        if cuda:
+            noise = noise.cuda()
+        x = (input + noise) / temperature # [B, L, 2]
+        x = F.softmax(x.view(-1, x.size()[-1]), dim=-1) # [B*L, 2]
+        return x.view_as(input)
+
+    def __z_forward(self, activ):
+        """
+        :param activ: activation before the last layer.
+        :return: prob of each token being selected.
+        """
+        logits = self.hidden(activ) # [B, L, 2]
+        probs = self.gumbel_softmax(logits, cuda=self.args.cuda) # [B, L, 2]
+        z = probs[:, : ,1] # [B, L]
+        return z # [B, L]
+
+    def forward(self, x):
+        """
+        :param x: input data [B, L, D].
+        :return: z * x.
+        """
+        '''
+            Given input x_indx of dim (batch, length), return z (batch, length) such that z
+            can act as element-wise mask on x
+        '''
+        activ, _ = self.encoder(x) # [B, L, H]
+        z = self.__z_forward(F.relu(activ)) # [B, L]
+        return z
+
+    def loss(self, z):
+        """
+        :param z: [B, L].
+        :return: Compute the generator specific costs, i.e selection cost, continuity cost, and global vocab cost.
+        """
+        selection_cost = torch.mean(torch.sum(z, dim=1))
+        l_padded_mask = torch.cat([z[:, 0].unsqueeze(1), z], dim=1)
+        r_padded_mask = torch.cat([z, z[:, -1].unsqueeze(1)], dim=1)
+        continuity_cost = torch.mean(torch.sum(torch.abs(l_padded_mask - r_padded_mask), dim=1))
+        return selection_cost, continuity_cost
+
+
+class RationaleNetEncoder(nn.Module):
+    def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU', use_input_attention=False,
+                 normalize=False):
+        super(RationaleNetEncoder, self).__init__()
+
+        self.encoder = RnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, use_input_attention,
+                                  normalize)
+        if torch.cuda.is_available():
+            self.cuda = True
+        else:
+            self.cuda = False
+
+    def forward(self, x, z=None):
+        """
+        :param x: [B, L, D].
+        :param z: [B, L].
+        :return: logit: [B, L, H]
+        """
+        if z is not None:
+            x = x * z
+        logit, _ = self.encoder(x)
+        return logit

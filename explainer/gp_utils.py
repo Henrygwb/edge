@@ -3,6 +3,7 @@
 import math
 import torch
 import warnings
+import gpytorch
 import numpy as np
 import seaborn as sns
 import torch.nn as nn
@@ -17,6 +18,214 @@ from gpytorch.variational._variational_strategy import _VariationalStrategy
 from gpytorch.variational.variational_strategy import _ensure_updated_strategy_flag_set
 from gpytorch.utils.memoize import cached, clear_cache_hook, pop_from_cache_ignore_args
 from gpytorch.lazy import DiagLazyTensor, MatmulLazyTensor, RootLazyTensor, SumLazyTensor, TriangularLazyTensor, delazify
+
+
+# Build the RNN model.
+class RNNEncoder(nn.Module):
+    def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
+        """
+        RNN structure (MLP+seq2seq) (\theta_1: RNN parameters).
+        :param seq_len: trajectory length.
+        :param input_dim: the dimensionality of the input (Concatenate of observation and action)
+        :param hiddens: hidden layer dimensions.
+        :param dropout_rate: dropout rate.
+        :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
+        :param normalize: whether to normalize the inputs.
+        """
+        super(RNNEncoder, self).__init__()
+        self.normalize = normalize
+        self.seq_len = seq_len
+        self.input_dim = input_dim
+        self.hidden_dim = hiddens[-1]
+        self.rnn_cell_type = rnn_cell_type
+        self.mlp_encoder = nn.Sequential()
+        for i in range(len(hiddens)-1):
+            if i == 0:
+                self.mlp_encoder.add_module('mlp_%d' % i, nn.Linear(input_dim, hiddens[i]))
+            else:
+                self.mlp_encoder.add_module('mlp_%d' % i, nn.Linear(hiddens[i-1], hiddens[i]))
+            self.mlp_encoder.add_module('relu_%d' % i, nn.ReLU())
+            self.mlp_encoder.add_module('dropout_%d' % i, nn.Dropout(dropout_rate))
+
+        if self.rnn_cell_type == 'GRU':
+            print('Using GRU as the recurrent layer.')
+            self.rnn = nn.GRU(input_size=hiddens[-2], hidden_size=hiddens[-1], batch_first=True)
+        elif self.rnn_cell_type == 'LSTM':
+            print('Using LSTM as the recurrent layer.')
+            self.rnn = nn.LSTM(input_size=hiddens[-2], hidden_size=hiddens[-1], batch_first=True)
+        else:
+            print('Using the default recurrent layer: GRU.')
+            self.rnn = nn.GRU(input_size=hiddens[-2], hidden_size=hiddens[-1], batch_first=True)
+            self.rnn_cell_type = 'GRU'
+
+        self.traj_embed_layer = nn.Linear(hiddens[-1], hiddens[-1])
+
+    def forward(self, x, h0=None, c0=None):
+        # forward function: given an input, return the model output (output at each time and the final time step).
+        """
+        :param x: input trajectories (Batch_size, seq_len, input_dim).
+        :param h0: Initial hidden state at time t_0 (Batch_size, 1, hidden_dim).
+        :param c0: Initial cell state at time t_0 (Batch_size, 1, hidden_dim).
+        :return step_embed: the latent representation of each time step (batch_size, seq_len, hidden_dim).
+        :return traj_embed: the latend representation of each trajectory (batch_size, hidden_dim).
+        """
+        if self.normalize:
+            mean = torch.mean(x, dim=(0, 1))[None, None, :]
+            std = torch.std(x, dim=(0, 1))[None, None, :]
+            x = (x - mean)/std
+        mlp_encoded = self.mlp_encoder(x) # (N, T, Hiddens[-2]) get the hidden representation of every time step.
+        if self.rnn_cell_type == 'GRU':
+            step_embed, traj_embed = self.rnn(mlp_encoded, h0)
+        else:
+            step_embed, traj_embed, _ = self.rnn(mlp_encoded, h0, c0)
+        traj_embed = torch.squeeze(traj_embed, 0) # (1, batch_size, hidden_dim) -> (batch_size, hidden_dim)
+        traj_embed = self.traj_embed_layer(traj_embed) # (batch_size, hidden_dim)
+        return step_embed, traj_embed
+
+
+# Build the GP layer.
+class GaussianProcessLayer(gpytorch.models.ApproximateGP):
+    def __init__(self, input_dim_step, input_dim_traj, num_inducing_points, inducing_points, mean_inducing_points,
+                 grid_bounds, likelihood_type, using_ngd, using_ksi, using_ciq, using_sor, using_OrthogonallyDecouple):
+        """
+        Define the mean and kernel function: Constant mean, and additive RBF kernel (step kernel + traj kernel).
+        variational distribution: Cholesky Multivariate Gaussian q(u) ~ N(\mu, LL^T).
+        variational strategy: VariationalStrategy with whitening.
+        Standard variational strategy, add KSI.
+        p(u) ~ N(0, K_{zz})
+        Define u = Lv, where v ~ N(0, 1), LL^T = K_{zz}
+        q(v) ~ N(\mu, S) -> q(u) ~ N(L\mu, LSL^T)
+        q(f|v) ~ N(K_{xz}K_{zz}^(-1)Lv, K_{xx} - K_{xz}K_{zz}^{-1}K_{xz}^{T})
+        q(f) ~ N(K_{xz}K_{zz}^(-1/2)\mu, K_{xx} + K_{xz}K_{zz}^(-1/2)(S-I)K_{zz}^(-1/2)K_{xz}^{T})
+        inducing points Z (n, input_dim_step+input_dim_traj),
+        \theta_2: kernel parameters, variational parameters, and Z.
+
+        :param input_dim_step: step embedding dim.
+        :param input_dim_traj: traj embedding dim.
+        :param inducing_points: inducing points at the latent space (n, input_dim_step+input_dim_traj).
+        :param mean_inducing_points: mean inducing points, used for orthogonally decoupled VGP.
+        :param grid_bounds: grid bounds.
+        :param likelihood_type: likelihood type.
+        :param using_ngd: Whether to use natural gradient descent.
+        :param using_ksi: Whether to use KSI approximation, using this with other options as False.
+        :param using_ciq: Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
+        :param using_sor: Whether to use SoR approximation, not applicable for KSI and CIQ.
+        :param using_OrthogonallyDecouple
+        """
+        if using_ngd:
+            print('Using Natural Gradient Descent.')
+            if likelihood_type == 'regression':
+                print('Conjugate likelihood: using NaturalVariationalDistribution.')
+                variational_distribution = gpytorch.variational.NaturalVariationalDistribution(
+                    num_inducing_points=num_inducing_points)
+            else:
+                print('Non-conjugate likelihood: using TrilNaturalVariationalDistribution.')
+                variational_distribution = gpytorch.variational.TrilNaturalVariationalDistribution(
+                    num_inducing_points=num_inducing_points)
+        else:
+            variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(
+                num_inducing_points=num_inducing_points)
+
+        if using_ksi:
+            print('Using KSI.')
+            variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(
+                num_inducing_points=int(pow(num_inducing_points, len(grid_bounds))))
+            variational_strategy = gpytorch.variational.GridInterpolationVariationalStrategy(
+                self, num_inducing_points, grid_bounds, variational_distribution)
+        elif using_ciq:
+            print('Using CIQ.')
+            variational_strategy = gpytorch.variational.CiqVariationalStrategy(
+                self, inducing_points, variational_distribution, learn_inducing_locations=True)
+        else:
+            variational_strategy = CustomizedVariationalStrategy(self, inducing_points, variational_distribution,
+                                                                 learning_inducing_locations=True,
+                                                                 using_sor=using_sor)
+
+        if using_OrthogonallyDecouple:
+            print('Using Orthogonally Decouple.')
+            variational_strategy = gpytorch.variational.OrthogonallyDecoupledVariationalStrategy(
+                variational_strategy, mean_inducing_points,
+                gpytorch.variational.DeltaVariationalDistribution(mean_inducing_points.size(-2)))
+
+        super(GaussianProcessLayer, self).__init__(variational_strategy)
+
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.step_kernel = gpytorch.kernels.ScaleKernel(
+            gpytorch.kernels.RBFKernel(ard_num_dims=input_dim_step, active_dims=tuple(range(input_dim_step)),
+                                       lengthscale_prior=gpytorch.priors.SmoothedBoxPrior(
+                                           math.exp(-1), math.exp(1), sigma=0.1, transform=torch.exp)))
+        self.traj_kernel = gpytorch.kernels.ScaleKernel(
+            gpytorch.kernels.RBFKernel(ard_num_dims=input_dim_traj,
+                                       active_dims=tuple(range(input_dim_step, input_dim_traj+input_dim_step)),
+                                       lengthscale_prior=gpytorch.priors.SmoothedBoxPrior(
+                                           math.exp(-1), math.exp(1), sigma=0.1, transform=torch.exp)))
+        self.covar_module = self.step_kernel + self.traj_kernel
+
+    def forward(self, x):
+        """
+        Compute the prior distribution.
+        :param x: input data (n, d).
+        :return: Prior distribution of x (MultivariateNormal).
+        """
+        mean = self.mean_module(x)
+        covar = self.covar_module(x) # Checked this part, covar = self.step_kernel(x) + self.traj_kernel(x).
+        return gpytorch.distributions.MultivariateNormal(mean, covar)
+
+    # __call__: compute the conditional/marginal posterior.
+
+
+# Build the full model.
+class DGPXRLModel(gpytorch.Module):
+    def __init__(self, seq_len, input_dim, hiddens, likelihood_type, num_inducing_points, inducing_points=None,
+                 mean_inducing_points=None, dropout_rate=0.25, rnn_cell_type='GRU', normalize=False, grid_bounds=None,
+                 using_ngd=False, using_ksi=False, using_ciq=False, using_sor=False, using_OrthogonallyDecouple=False):
+        """
+        Define the full model.
+        :param seq_len: trajectory length.
+        :param input_dim: input state/action dimension.
+        :param hiddens: hidden layer dimentions.
+        :param likelihood_type: likelihood type.
+        :param num_inducing_points: number of inducing points.
+        :param inducing_points: inducing points at the latent space Z (num_inducing_points, 2*hiddens[-1]).
+        :param mean_inducing_points: mean inducing points, used for orthogonally decoupled VGP.
+        :param dropout_rate: MLP dropout rate.
+        :param rnn_cell_type: the RNN cell type.
+        :param normalize: whether to normalize the input.
+        :param grid_bounds: grid bounds.
+        :param using_ngd: Whether to use natural gradient descent.
+        :param using_ksi: Whether to use KSI approximation, using this with other options as False.
+        :param using_ciq: Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
+        :param using_sor: Whether to use SoR approximation, not applicable for KSI and CIQ.
+        :param using_OrthogonallyDecouple
+        """
+        super().__init__()
+        self.seq_len = seq_len
+        self.encoder = RNNEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize)
+        if inducing_points is None:
+            inducing_points = torch.randn(num_inducing_points, 2*hiddens[-1])
+        if mean_inducing_points is None:
+            mean_inducing_points = torch.randn(num_inducing_points*5, 2*hiddens[-1])
+
+        self.gp_layer = GaussianProcessLayer(input_dim_step=hiddens[-1], input_dim_traj=hiddens[-1],
+                                             num_inducing_points=num_inducing_points, inducing_points=inducing_points,
+                                             mean_inducing_points=mean_inducing_points, grid_bounds=grid_bounds,
+                                             likelihood_type=likelihood_type, using_ngd=using_ngd, using_ksi=using_ksi,
+                                             using_ciq=using_ciq, using_sor=using_sor,
+                                             using_OrthogonallyDecouple=using_OrthogonallyDecouple)
+
+    def forward(self, x):
+        """
+        Compute the marginal posterior q(f) ~ N(\mu_f, \sigma_f), \mu_f (N*T, 1), \sigma_f(N*T, N*T).
+        Later, when computing the marginal loglikelihood, we sample multiple set of data from the marginal loglikelihood.
+        :param x: input data x (N, T, P).
+        :return: q(gy_layer(Encoder(x))).
+        """
+        step_embedding, traj_embedding = self.encoder(x)  # (N, T, P) -> (N, T, D), (N, D).
+        traj_embedding = traj_embedding[:, None, :].repeat(1, self.seq_len, 1) # (N, D) -> (N, T, D)
+        features = torch.cat([step_embedding, traj_embedding], dim=-1) # (N, T, 2D)
+        features = features.view(x.size(0)*x.size(1), features.size(-1))
+        res = self.gp_layer(features)
+        return res
 
 
 class ConstantMean(nn.Module):
