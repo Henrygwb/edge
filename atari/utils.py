@@ -27,6 +27,7 @@ def get_args():
 
     parser.add_argument('--render_game', action="store_true", help="Render live game during runs")
     parser.add_argument('--use_pretrained_model', action="store_true", help="Render live game during runs")
+    parser.add_argument('--drop_visualizations', action="store_true", help="Do not save rgb game frames")
 
     args = parser.parse_args()
     

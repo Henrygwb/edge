@@ -79,6 +79,9 @@ def run_agent(args, model=None, env=None):
         'n_traj': n_traj
     }
 
+    if args.drop_visualizations:
+        del save_dict['rgb_visualizations']
+
     with open(Path(args.log_dir)/'data.npz', 'wb') as f:
         np.savez_compressed(f, **save_dict)
 
