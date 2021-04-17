@@ -1,9 +1,8 @@
 Variational_Deep_GP.pdf
-/src/.idea
 .idea
 venv/
 logs/
 .vscode
 .DS_Store
 __pycache__/
-/src/explainer/ref_code/
+/explainer/ref_code/

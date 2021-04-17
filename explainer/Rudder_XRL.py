@@ -9,7 +9,7 @@ import tqdm
 import torch
 import numpy as np
 import torch.optim as optim
-from .rnn_utils import RnnEncoder
+from .rnn_utils import CnnRnnEncoder, MlPRnnEncoder
 
 
 # Baseline 1 [RUDDER]: Vanilla RNN + Input mask.
@@ -17,16 +17,23 @@ from .rnn_utils import RnnEncoder
 # Concatenate action and observation as the input and the final reward as the output.
 # Train the Seq2one + Seq2seq RNN, and use the prediction difference of p_t - p_{t-1} as the importance of r_t.
 class Rudder(object):
-    def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
+    def __init__(self, seq_len, input_dim, hiddens, encoder_type='MLP', dropout_rate=0.25, rnn_cell_type='GRU',
+                 normalize=False):
         """
         :param seq_len: trajectory length.
         :param input_dim: the dimensionality of the input (Concatenate of observation and action).
         :param hiddens: hidden layer dimensions.
         :param dropout_rate: dropout rate.
+        :param encoder_type: encoder type ('MLP' or 'CNN').
         :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
         :param normalize: whether to normalize the inputs.
         """
-        self.model = RnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
+        self.encoder_type = encoder_type
+        if self.encoder_type == 'CNN':
+            self.model = CnnRnnEncoder(seq_len, input_dim, input_channles=1, hidden_dim=hiddens[-1],
+                                       rnn_cell_type=rnn_cell_type, normalize=normalize)
+        else:
+            self.model = MlPRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
         self.fc_out = torch.nn.Linear(hiddens[-1], 1)
         if torch.cuda.is_available():
             self.model = self.model.cuda()

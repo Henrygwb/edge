@@ -9,9 +9,91 @@ import torch.nn.functional as F
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-class RnnEncoder(nn.Module):
-    def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU', use_input_attention=False,
-                 normalize=False):
+class CnnRnnEncoder(nn.Module):
+    def __init__(self, seq_len, input_dim, input_channles, hidden_dim, rnn_cell_type='GRU',
+                 use_input_attention=False, normalize=False):
+        """
+        RNN structure (MLP+seq2seq) (\theta_1: RNN parameters).
+        :param seq_len: trajectory length.
+        :param input_dim: the dimensionality of the input (Concatenate of observation and action).
+        :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
+        :param use_input_attention: Whether to use the input cell attention.
+        :param normalize: whether to normalize the inputs.
+        """
+        super(CnnRnnEncoder, self).__init__()
+        self.normalize = normalize
+        self.seq_len = seq_len
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.rnn_cell_type = rnn_cell_type
+        self.cnn_encoder = nn.Sequential()
+
+        self.cnn_encoder.add_module('cnn_%d' % 1, nn.Conv2d(input_channles, 32, kernel_size=(3, 3), stride=(2, 2)))
+        self.cnn_encoder.add_module('relu_%d' % 1, nn.ReLU())
+
+        self.cnn_encoder.add_module('cnn_%d' % 2, nn.Conv2d(32, 32, kernel_size=(3, 3), stride=(2, 2)))
+        self.cnn_encoder.add_module('relu_%d' % 2, nn.ReLU())
+
+        self.cnn_encoder.add_module('cnn_%d' % 3, nn.Conv2d(32, 32, kernel_size=(3, 3), stride=(2, 2)))
+        self.cnn_encoder.add_module('relu_%d' % 3, nn.ReLU())
+
+        self.cnn_encoder.add_module('cnn_%d' % 4, nn.Conv2d(32, 32, kernel_size=(3, 3), stride=(2, 2)))
+        self.cnn_encoder.add_module('relu_%d' % 4, nn.ReLU())
+
+        self.cnn_encoder.add_module('flatten', nn.Flatten(start_dim=-3, end_dim=-1))
+
+        if input_dim == 80 or 84:
+            self.cnn_out_dim = 4 * 4 * 32
+        else:
+            raise ValueError ('input dim does not support.')
+
+        if self.rnn_cell_type == 'GRU':
+            print('Using GRU as the recurrent layer.')
+            if use_input_attention:
+                print('Using the input cell attention for saliency methods to prevent gradient vanish/explosion.')
+                self.rnn = GRUWithInputCellAttention(input_sz=self.cnn_out_dim, hidden_sz=hidden_dim)
+            else:
+                self.rnn = nn.GRU(input_size=self.cnn_out_dim, hidden_size=hidden_dim, batch_first=True)
+        elif self.rnn_cell_type == 'LSTM':
+            print('Using LSTM as the recurrent layer.')
+            if use_input_attention:
+                print('Using the input cell attention for saliency methods to prevent gradient vanish/explosion.')
+                self.rnn = LSTMWithInputCellAttention(input_sz=self.cnn_out_dim, hidden_sz=hidden_dim)
+            else:
+                self.rnn = nn.LSTM(input_size=self.cnn_out_dim, hidden_size=hidden_dim, batch_first=True)
+        else:
+            print('Using the default recurrent layer: GRU.')
+            if use_input_attention:
+                print('Using the input cell attention for saliency methods to prevent gradient vanish/explosion.')
+                self.rnn = GRUWithInputCellAttention(input_sz=self.cnn_out_dim, hidden_sz=hidden_dim)
+            else:
+                self.rnn = nn.GRU(input_size=self.cnn_out_dim, hidden_size=hidden_dim, batch_first=True)
+            self.rnn_cell_type = 'GRU'
+
+    def forward(self, x, h0=None, c0=None):
+        # forward function: given an input, return the model output (output at each time and the final time step).
+        """
+        :param x: input trajectories (Batch_size, seq_len, input_dim).
+        :param h0: Initial hidden state at time t_0 (Batch_size, 1, hidden_dim).
+        :param c0: Initial cell state at time t_0 (Batch_size, 1, hidden_dim).
+        :return step_embed: the latent representation of each time step (batch_size, seq_len, hidden_dim).
+        :return traj_embed: the latend representation of each trajectory (batch_size, hidden_dim).
+        """
+        if self.normalize:
+            mean = torch.mean(x, dim=(0, 1))[None, None, :]
+            std = torch.std(x, dim=(0, 1))[None, None, :]
+            x = (x - mean) / std
+        cnn_encoded = self.cnn_encoder(x)  # (N, T, D1) get the hidden representation of every time step.
+        if self.rnn_cell_type == 'GRU':
+            step_embed, _ = self.rnn(cnn_encoded, h0)
+        else:
+            step_embed, _, _ = self.rnn(cnn_encoded, h0, c0)
+        return step_embed
+
+
+class MlPRnnEncoder(nn.Module):
+    def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU',
+                 use_input_attention=False, normalize=False):
         """
         RNN structure (MLP+seq2seq) (\theta_1: RNN parameters).
         :param seq_len: trajectory length.
@@ -22,7 +104,7 @@ class RnnEncoder(nn.Module):
         :param use_input_attention: Whether to use the input cell attention.
         :param normalize: whether to normalize the inputs.
         """
-        super(RnnEncoder, self).__init__()
+        super(MlPRnnEncoder, self).__init__()
         self.normalize = normalize
         self.seq_len = seq_len
         self.input_dim = input_dim
