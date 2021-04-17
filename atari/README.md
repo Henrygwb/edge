@@ -33,6 +33,4 @@ optional arguments:
                         Use a pretrained model
 ```
 
-Currently pretrained models don't work yet. Only pay attention to the `log_dir`, `episodes`, `game` and `render_game` commands.
-
-I recommend navigating to this directory and running: `python run.py --log_dir logs/ --game SeaquestNoFrameskip-v4 --render_game` to start.
+I recommend navigating to this directory and running: `python run.py --log_dir logs/ --game SeaquestNoFrameskip-v4 --render_game --use_pretrained_model --model_dir models --episodes 5` to start.

@@ -1,95 +1,111 @@
-import glob
-import torch
-import numpy as np
-import torch.nn as nn
-from scipy.misc import imresize
-import torch.nn.functional as F
-from torch.autograd import Variable
+import argparse
+from pathlib import Path
+from datetime import datetime
+import sys
+from zipfile import ZipFile
+from urllib.request import urlopen
+from urllib.error import HTTPError
 
-prepro_1 = lambda img: imresize(img[35:195].mean(2), (80,80)).astype(np.float32).reshape(1,80,80)/255.
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_atari_env
+from stable_baselines3.common.vec_env import VecFrameStack
+import gym
+import yaml
 
+BASE_MODEL_URL = 'https://github.com/DLR-RM/rl-trained-agents/raw/d81fcd61cef4599564c859297ea68bacf677db6b/ppo'
 
-class NNPolicy(torch.nn.Module): # an actor-critic neural network
-    def __init__(self, channels, num_actions):
-        super(NNPolicy, self).__init__()
-        self.conv1 = nn.Conv2d(channels, 32, 3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.conv4 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.lstm = nn.LSTMCell(32 * 5 * 5, 256)
-        self.critic_linear, self.actor_linear = nn.Linear(256, 1), nn.Linear(256, num_actions)
+def get_args():
+    parser = argparse.ArgumentParser()
 
-    def forward(self, inputs):
-        inputs, (hx, cx) = inputs
-        x = F.elu(self.conv1(inputs))
-        x = F.elu(self.conv2(x))
-        x = F.elu(self.conv3(x))
-        x = F.elu(self.conv4(x))
-        x = x.view(-1, 32 * 5 * 5)
-        hx, cx = self.lstm(x, (hx, cx))
-        return self.critic_linear(hx), self.actor_linear(hx), (hx, cx)
+    parser.add_argument('--log_dir', type=str, required=True, help='Log directory path')
+    parser.add_argument('--model_dir', type=str, required=False, help='Model directory path')
+    # parser.add_argument('--init_seed', type=int, required=False, default=0, help='Random seed')
 
-    def try_load(self, save_dir, checkpoint='*.tar'):
-        paths = glob.glob(save_dir + checkpoint) ; step = 0
-        if len(paths) > 0:
-            ckpts = [int(s.split('.')[-2]) for s in paths]
-            ix = np.argmax(ckpts) ; step = ckpts[ix]
-            self.load_state_dict(torch.load(paths[ix]))
-        print("\tno saved models") if step is 0 else print("\tloaded model: {}".format(paths[ix]))
-        return step
+    parser.add_argument('--game', type=str, required=True, help='Game to run')
+    parser.add_argument('--episodes', type=int, required=False, default=2, help='Number of episodes')
+    parser.add_argument('--max_timesteps', type=int, required=False, default=-1, help='Max timesteps per episode')
 
+    parser.add_argument('--render_game', action="store_true", help="Render live game during runs")
+    parser.add_argument('--use_pretrained_model', action="store_true", help="Render live game during runs")
+    parser.add_argument('--drop_visualizations', action="store_true", help="Do not save rgb game frames. Saves a lot of data space.")
 
-def rollout(model, env, num_traj, max_ep_len=1e3, render=False):
-    all_obs, all_acts, all_rewards, all_values = [], [], [], []
-    max_ep_length = 0
-    for i in range(num_traj):
-        print('Traj %d out of %d.' %(i, num_traj))
-        cur_obs, cur_acts, cur_rewards, cur_values = [], [], [], []
-        state = torch.tensor(prepro_1(env.reset()))  # get first state
-        episode_length, epr, eploss, done = 0, 0, 0, False  # bookkeeping
-        hx, cx = Variable(torch.zeros(1, 256)), Variable(torch.zeros(1, 256))
+    args = parser.parse_args()
+    
+    # Meddle with arguments
+    cur_time = str(datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
+    log_path = Path(args.log_dir) / (f'{args.game}-{cur_time}-{args.episodes}-episodes')
+    if args.use_pretrained_model:
+        model_path = Path(args.model_dir)
+        model_path.mkdir(parents=True, exist_ok=True)
+    log_path.mkdir(parents=True, exist_ok=True)
+    args.log_dir = str(log_path)
 
-        while not done and episode_length <= max_ep_len:
-            episode_length += 1
-            value, logit, (hx, cx) = model((Variable(state.view(1, 1, 80, 80)), (hx, cx)))
-            hx, cx = Variable(hx.data), Variable(cx.data)
-            prob = F.softmax(logit, dim=-1)
+    return args
 
-            action = prob.max(1)[1].data  # prob.multinomial().data[0] #
-            obs, reward, done, expert_policy = env.step(action.numpy()[0])
-            if env.env.game == 'pong':
-                done = reward
-            if render: env.render()
-            state = torch.tensor(prepro_1(obs))
-            epr += reward
+def get_model(args):
+    game = args.game
+    model_path = Path(args.model_dir)/f'{game}'
+    # Download the model to model-dir if doesn't exist
+    if not model_path.exists():
+        model_path.mkdir()
+        print('Downloading pretrained model...')
+        zip_url = f'{BASE_MODEL_URL}/{game}_1/{game}.zip'
+        args_yaml_url = f'{BASE_MODEL_URL}/{game}_1/{game}/args.yml'
+        config_yaml_url = f'{BASE_MODEL_URL}/{game}_1/{game}/config.yml'
+        try:
+            zipresp = urlopen(zip_url)
+            args_yamlresp = urlopen(args_yaml_url)
+            config_yamlresp = urlopen(config_yaml_url)
+        except HTTPError as err:
+            if err.code == 404:
+                print(f'tried {zip_url}')
+                print('Model file not found. Make sure it exists at https://github.com/DLR-RM/rl-trained-agents/blob/d81fcd61cef4599564c859297ea68bacf677db6b/ppo/')
+                exit()
+        except Exception as err:
+            print(err)
+            exit()
+        with open(model_path/f'{game}.zip', 'wb') as f:
+            f.write(zipresp.read())
+        with open(model_path/f'args.yml', 'wb') as f:
+            f.write(args_yamlresp.read())
+        with open(model_path/f'config.yml', 'wb') as f:
+            f.write(config_yamlresp.read())
 
-            # save info!
-            cur_obs.append(obs)
-            cur_acts.append(action.numpy()[0])
-            cur_rewards.append(reward)
-            cur_values.append(value.detach().numpy()[0,0])
+    with open(model_path/f'args.yml', 'r') as f:
+        loaded_args = yaml.load(f, Loader=yaml.UnsafeLoader)  # pytype: disable=module-attr
+        if loaded_args["env_kwargs"] is not None:
+                env_kwargs = loaded_args["env_kwargs"]
 
-        print('step # {}, reward {:.0f}, action {:.0f}, value {:.4f}.'.format(episode_length, epr,
-                                                                               action.numpy()[0],
-                                                                               value.detach().numpy()[0,0]))
+    hyperparams = {}
+    with open(model_path/f'config.yml', 'r') as f:
+        loaded_args = yaml.load(f, Loader=yaml.UnsafeLoader)  # pytype: disable=module-attr
+        if loaded_args["env_wrapper"] is not None:
+            hyperparams['env_wrapper'] = loaded_args['env_wrapper'][0]
+        if loaded_args['frame_stack'] is not None:
+            hyperparams['frame_stack'] = loaded_args['frame_stack']
+    
+    # Check if we are running python 3.8+
+    # we need to patch saved model under python 3.6/3.7 to load them
+    newer_python_version = sys.version_info.major == 3 and sys.version_info.minor >= 8
 
-        all_obs.append(cur_obs)
-        all_acts.append(cur_acts)
-        all_rewards.append(cur_rewards)
-        all_values.append(cur_values)
-        max_ep_length = max(len(cur_rewards), max_ep_length)
+    custom_objects = {}
+    if newer_python_version:
+        custom_objects = {
+            "learning_rate": 0.0,
+            "lr_schedule": lambda _: 0.0,
+            "clip_range": lambda _: 0.0,
+        }
+    model = PPO.load(model_path/f'{game}.zip', custom_objects=custom_objects)
 
-    for all_arr in all_obs, all_acts, all_rewards, all_values:
-        for arr in all_arr:
-            padding_amt = max_ep_length - len(arr)
-            elem = arr[-1]
-            padding_elem = np.ones_like(elem) * -1
-            arr.extend([padding_elem for _ in range(padding_amt)])
+    env = gym.make(args.game)
+    if hyperparams['env_wrapper'] is not None:
+        if "AtariWrapper" in hyperparams['env_wrapper']:
+            env = make_atari_env(args.game, n_envs=1)
+        else:
+            print(f'Unknown wrapper {hyperparams["env_wrapper"]}')
+            exit(1)
+    if hyperparams['frame_stack'] is not None:
+        print(f"Stacking {hyperparams['frame_stack']} frames")
+        env = VecFrameStack(env, n_stack=hyperparams['frame_stack'])
+    return model, env
 
-    all_obs = np.array(all_obs)
-    all_acts = np.array(all_acts)
-    all_rewards = np.array(all_rewards)
-    all_values = np.array(all_values)
-    history = {'observation': all_obs, 'actions': all_acts, 'rewards': all_rewards, 'values': all_values}
-
-    return history
