@@ -11,7 +11,7 @@ from atari_pong.utils import NNPolicy, rollout
 sys.path.append('..')
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--explainer", type=str, default='attention')
+parser.add_argument("--explainer", type=str, default='rationale')
 
 args = parser.parse_args()
 
@@ -148,16 +148,16 @@ elif args.explainer == 'attention':
     sal_attention = attention_explainer.get_explanations(obs, acts, final_rewards)
     np.savez_compressed(save_path+'attention_exp.npz', sal=sal_attention)
 
-elif args.explainer == 'rational':
+elif args.explainer == 'rationale':
     # Explainer 5 - RationaleNet.
-    attention_explainer = RnnAttn(seq_len, input_dim, 'classification', hiddens, n_action, encoder_type=encoder_type,
-                                  num_class=2, attention_type='tanh', normalize=False)
-    attention_explainer.train(train_loader, n_epoch, save_path=save_path+'attention_model.data')
-    attention_explainer.test(test_loader)
-    attention_explainer.load(save_path+'attention_model.data')
-    attention_explainer.test(test_loader)
-    sal_attention = attention_explainer.get_explanations(obs, acts, final_rewards)
-    np.savez_compressed(save_path+'attention_exp.npz', sal=sal_attention)
+    rationale_explainer = RationaleNet(seq_len, input_dim, 'regression', hiddens, n_action, encoder_type=encoder_type,
+                                       num_class=2, normalize=False)
+    rationale_explainer.train(train_loader, n_epoch, save_path=save_path+'rationale_model.data')
+    rationale_explainer.test(test_loader)
+    rationale_explainer.load(save_path+'rationale_model.data')
+    rationale_explainer.test(test_loader)
+    sal_rationale = rationale_explainer.get_explanations(obs, acts, final_rewards)
+    np.savez_compressed(save_path+'rationale_exp.npz', sal=sal_rationale)
 
 # Explainer 6 - DGP.
 

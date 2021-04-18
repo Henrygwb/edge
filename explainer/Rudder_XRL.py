@@ -172,8 +172,9 @@ class Rudder(object):
 
         # Distribute correction for prediction error equally over all sequence positions
         redistributed_reward += prediction_error[:, None] / redistributed_reward.shape[1]
-        redistributed_reward = redistributed_reward.detach().numpy()
+        saliency = redistributed_reward.detach().numpy()
         if normalize:
             saliency = (redistributed_reward - np.min(redistributed_reward, axis=1)[:, None]) / \
                        (np.max(redistributed_reward, axis=1)[:, None] - np.min(redistributed_reward, axis=1)[:, None])
+
         return saliency

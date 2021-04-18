@@ -404,14 +404,22 @@ class DotAttention(nn.Module):
 
 
 class RationaleNetGenerator(nn.Module):
-    def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU', use_input_attention=False,
-                 normalize=False):
+    def __init__(self, seq_len, input_dim, hiddens, n_action, embed_dim=16, encoder_type='MLP',
+                 dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
+
         super(RationaleNetGenerator, self).__init__()
-        self.encoder = RnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, use_input_attention,
-                                  normalize)
+
+        self.encoder_type = encoder_type
+
+        if self.encoder_type == 'CNN':
+            self.encoder = CnnRnnEncoder(seq_len, input_dim, input_channles=1, hidden_dim=hiddens[-1],
+                                         n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
+                                         normalize=normalize)
+        else:
+            self.encoder = MlPRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
+
         self.z_dim = 2
         self.hidden = nn.Linear(hiddens[-1], self.z_dim)
-
 
         if torch.cuda.is_available():
             self.cuda = True
@@ -443,11 +451,11 @@ class RationaleNetGenerator(nn.Module):
         :return: prob of each token being selected.
         """
         logits = self.hidden(activ) # [B, L, 2]
-        probs = self.gumbel_softmax(logits, cuda=self.args.cuda) # [B, L, 2]
+        probs = self.gumbel_softmax(logits, cuda=self.cuda) # [B, L, 2]
         z = probs[:, : ,1] # [B, L]
         return z # [B, L]
 
-    def forward(self, x):
+    def forward(self, x, y):
         """
         :param x: input data [B, L, D].
         :return: z * x.
@@ -456,7 +464,7 @@ class RationaleNetGenerator(nn.Module):
             Given input x_indx of dim (batch, length), return z (batch, length) such that z
             can act as element-wise mask on x
         '''
-        activ, _ = self.encoder(x) # [B, L, H]
+        activ = self.encoder(x, y) # [B, L, H]
         z = self.__z_forward(F.relu(activ)) # [B, L]
         return z
 
@@ -473,24 +481,37 @@ class RationaleNetGenerator(nn.Module):
 
 
 class RationaleNetEncoder(nn.Module):
-    def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU', use_input_attention=False,
-                 normalize=False):
+    def __init__(self, seq_len, input_dim, hiddens, n_action, embed_dim=16, encoder_type='MLP',
+                 dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
+
         super(RationaleNetEncoder, self).__init__()
 
-        self.encoder = RnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, use_input_attention,
-                                  normalize)
+        self.encoder_type = encoder_type
+
+        if self.encoder_type == 'CNN':
+            self.encoder = CnnRnnEncoder(seq_len, input_dim, input_channles=1, hidden_dim=hiddens[-1],
+                                       n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
+                                       normalize=normalize)
+        else:
+            self.encoder = MlPRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
+
         if torch.cuda.is_available():
             self.cuda = True
         else:
             self.cuda = False
 
-    def forward(self, x, z=None):
+    def forward(self, x, y, z=None):
         """
         :param x: [B, L, D].
+        :param y: [B, L].
         :param z: [B, L].
         :return: logit: [B, L, H]
         """
         if z is not None:
-            x = x * z
-        logit, _ = self.encoder(x)
+            if self.encoder_type == 'CNN':
+                x = x * z[..., None, None, None]
+            else:
+                x = x * z[..., None]
+        logit = self.encoder(x, y)
+
         return logit

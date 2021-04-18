@@ -16,29 +16,33 @@ from .rnn_utils import RationaleNetEncoder, RationaleNetGenerator
 
 # Baseline 4. Self-explainable model: [Rationalizing Neural Predictions].
 class RationaleNet(object):
-    def __init__(self, seq_len, input_dim, hiddens, likelihood_type, num_class, dropout_rate=0.25, rnn_cell_type='GRU',
-                 use_input_attention=False, normalize=False):
+    def __init__(self, seq_len, input_dim, likelihood_type, hiddens, n_action, num_class=0, embed_dim=16,
+                 encoder_type='MLP', dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
+
         """
         :param seq_len: trajectory length.
         :param input_dim: the dimensionality of the input (Concatenate of observation and action).
         :param hiddens: hidden layer dimensions.
         :param likelihood_type: likelihood type.
         :param num_class: number of output class.
+        :param n_action: number of actions.
+        :param embed_dim: actions embedding dim.
+        :param encoder_type: encoder type ('MLP' or 'CNN').
         :param dropout_rate: dropout rate.
         :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
-        :param use_input_attention: Whether to use the input cell attention.
         :param normalize: whether to normalize the inputs.
         """
 
-        self.generator = RationaleNetGenerator(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type,
-                                               use_input_attention, normalize)
-        self.encoder = RationaleNetEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type,
-                                           use_input_attention, normalize)
+        self.generator = RationaleNetGenerator(seq_len, input_dim, hiddens, n_action, embed_dim, encoder_type,
+                                               dropout_rate, rnn_cell_type, normalize)
+        self.encoder = RationaleNetEncoder(seq_len, input_dim, hiddens, n_action, embed_dim, encoder_type,
+                                           dropout_rate, rnn_cell_type, normalize)
+
         self.likelihood_type = likelihood_type
         if self.likelihood_type == 'classification':
             self.likelihood = nn.Sequential()
             self.likelihood.add_module('linear_out', nn.Linear(hiddens[-1], num_class))
-            self.likelihood.add_module('linear_out', nn.Softmax())
+            self.likelihood.add_module('linear_out_softmax', nn.Softmax())
         else:
             self.likelihood = nn.Linear(hiddens[-1], 1)
 
@@ -46,6 +50,14 @@ class RationaleNet(object):
             self.generator = self.generator.cuda()
             self.encoder = self.encoder.cuda()
             self.likelihood = self.likelihood.cuda()
+
+    def save(self, save_path):
+        encoder_state_dict = self.encoder.state_dict()
+        generator_state_dict = self.generator.state_dict()
+        likelihood_state_dict = self.likelihood.state_dict()
+        torch.save({'encoder': encoder_state_dict, 'generator': generator_state_dict,
+                    'likelihood': likelihood_state_dict}, save_path)
+        return 0
 
     def load(self, load_path):
         dicts = torch.load(load_path)
@@ -57,20 +69,11 @@ class RationaleNet(object):
         self.likelihood.load_state_dict(likelihood_dict)
         return self.encoder, self.generator, self.likelihood
 
-    def save(self, save_path):
-        encoder_state_dict = self.encoder.state_dict()
-        generator_state_dict = self.generator.state_dict()
-        likelihood_state_dict = self.likelihood.state_dict()
-        torch.save({'encoder': encoder_state_dict, 'generator': generator_state_dict,
-                    'likelihood': likelihood_state_dict}, save_path + '/checkpoint.data')
-        return 0
-
-    def train(self, train_loader, n_epoch, lr=0.01, gamma=0.1, optimizer_choice='adam',
-              lambda_selection=0.01, lambda_continuity=0.01, save_path=None):
+    def train(self, train_loader, n_epoch, lr=0.01, gamma=0.1, optimizer_choice='adam', lambda_selection=0.005,
+              lambda_continuity=0.005, save_path=None):
         """
         :param train_loader: training data loader.
         :param n_epoch: number of training epoch.
-        :param likelihood: Likelihood type, 'classification' or 'regression'.
         :param lr: learning rate.
         :param gamma: learning rate decay rate.
         :param optimizer_choice: training optimizer, 'adam' or 'sgd'.
@@ -102,30 +105,33 @@ class RationaleNet(object):
             mse = 0
             mae = 0
             correct = 0
-            for data, target in minibatch_iter:
+            for obs, acts, rewards in minibatch_iter:
                 if torch.cuda.is_available():
-                    data, target = data.cuda(), target.cuda()
+                    obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
                 optimizer.zero_grad()
-                z = self.generator(data)
-                output, _ = self.encoder(data, z)[..., -1]
+                z = self.generator(obs, acts)
+                output = self.encoder(obs, acts, z)[:, -1, :]
                 output = self.likelihood(output)
                 selection_cost, continuity_cost = self.generator.loss(z)
-                if self.likelihood == 'classification':
-                    loss = nn.CrossEntropyLoss(output, target)
+                if self.likelihood_type == 'classification':
+                    loss_fn = nn.CrossEntropyLoss()
                 else:
-                    loss = nn.MSELoss(output, target)
+                    loss_fn = nn.MSELoss()
+                    output = output.flatten()
+                    rewards = rewards.float()
+                loss = loss_fn(output, rewards)
                 loss = loss + lambda_selection*selection_cost + lambda_continuity*continuity_cost
                 loss.backward()
                 optimizer.step()
-                if self.likelihood == 'classification':
+                if self.likelihood_type == 'classification':
                     _, preds = torch.max(output, 1)
-                    correct += preds.eq(target.view_as(preds)).cpu().sum()
+                    correct += preds.eq(rewards.view_as(preds)).cpu().sum()
                 else:
-                    mae += torch.sum(torch.abs(output - target))
-                    mse += torch.sum(torch.square(output - target))
+                    mae += torch.sum(torch.abs(output - rewards))
+                    mse += torch.sum(torch.square(output - rewards))
                 minibatch_iter.set_postfix(loss=loss.item())
 
-            if self.likelihood == 'classification':
+            if self.likelihood_type == 'classification':
                 print('Test set: Accuracy: {}/{} ({}%)'.format(
                     correct, len(train_loader.dataset), 100. * correct / float(len(train_loader.dataset))
                 ))
@@ -150,21 +156,21 @@ class RationaleNet(object):
         mse = 0
         mae = 0
         correct = 0
-        for data, target in test_loader:
+        for obs, acts, rewards in test_loader:
             if torch.cuda.is_available():
-                data, target = data.cuda(), target.cuda()
-            z = self.generator(data)
-            output, _ = self.encoder(data, z)[..., -1]
+                obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            z = self.generator(obs, acts)
+            output = self.encoder(obs, acts, z)[:, -1, :]
             output = self.likelihood(output)
 
-            if self.likelihood == 'classification':
+            if self.likelihood_type == 'classification':
                 _, preds = torch.max(output, 1)
-                correct += preds.eq(target.view_as(preds)).cpu().sum()
+                correct += preds.eq(rewards.view_as(preds)).cpu().sum()
             else:
-                mae += torch.sum(torch.abs(output - target))
-                mse += torch.sum(torch.square(output - target))
+                mae += torch.sum(torch.abs(output - rewards))
+                mse += torch.sum(torch.square(output - rewards))
 
-        if self.likelihood == 'classification':
+        if self.likelihood_type == 'classification':
             print('Test set: Accuracy: {}/{} ({}%)'.format(
                 correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
             ))
@@ -176,20 +182,24 @@ class RationaleNet(object):
 
             return mse, mae
 
-    def get_explanations(self, data, normalize=True):
+    def get_explanations(self, obs, acts, rewards, normalize=True):
         """
-        :param data: input trajectories.
-        :param target: trajectory rewards.
+        :param obs: input observations.
+        :param acts: input actions.
+        :param rewards: trajectory rewards.
         :param normalize: Normalization or not.
         :return: time step importance.
         """
         self.encoder.eval()
         self.generator.eval()
+        if torch.cuda.is_available():
+            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
 
-        saliency = self.generator(data)
+        saliency = self.generator(obs, acts)
+        saliency = saliency.detach().numpy()
 
         if normalize:
-            saliency = (saliency - np.min(saliency, axis=1)[:, None])
-            saliency = saliency / (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
+            saliency = (saliency - np.min(saliency, axis=1)[:, None]) \
+                       / (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
 
         return saliency

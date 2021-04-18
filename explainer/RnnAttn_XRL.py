@@ -191,9 +191,9 @@ class RnnAttn(object):
 
     def get_explanations(self, obs, acts, rewards):
         """
-        :param data: input trajectories.
-        :param target: trajectory rewards.
-        :param normalize: Normalization or not.
+        :param obs: input observations.
+        :param acts: input actions.
+        :param rewards: trajectory rewards.
         :return: time step importance.
         """
         self.model.eval()
