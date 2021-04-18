@@ -10,29 +10,41 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
-from .rnn_utils import RnnEncoder, TanhAttention, DotAttention
+from .rnn_utils import MlPRnnEncoder, CnnRnnEncoder, TanhAttention, DotAttention
 
 
 # Baseline 3. RNN with attention [Attention is not Explanation].
 class RnnAttn(object):
-    def __init__(self, seq_len, input_dim, hiddens, attention_type, likelihood_type, dropout_rate=0.25, num_class=0,
-                 rnn_cell_type='GRU', use_input_attention=False, normalize=False):
+    def __init__(self, seq_len, input_dim, likelihood_type, hiddens, n_action, num_class=0, embed_dim=16,
+                 encoder_type='MLP', attention_type='tanh', dropout_rate=0.25, rnn_cell_type='GRU',
+                 use_input_attention=False, normalize=False):
         """
         :param seq_len: trajectory length.
         :param input_dim: the dimensionality of the input (Concatenate of observation and action).
-        :param attention_type: attention layer type.
         :param likelihood_type: likelihood type.
         :param hiddens: hidden layer dimensions.
-        :param dropout_rate: dropout rate.
         :param num_class: number of output class.
+        :param n_action: number of actions.
+        :param embed_dim: actions embedding dim.
+        :param encoder_type: encoder type ('MLP' or 'CNN').
+        :param attention_type: attention layer type.
+        :param dropout_rate: dropout rate.
         :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
         :param use_input_attention: Whether to use the input cell attention.
         :param normalize: whether to normalize the inputs.
         """
         self.attention_type = attention_type
         self.likelihood_type = likelihood_type
-        self.model = RnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, use_input_attention,
-                                normalize)
+        self.encoder_type = encoder_type
+
+        if self.encoder_type == 'CNN':
+            self.model = CnnRnnEncoder(seq_len, input_dim, input_channles=1, hidden_dim=hiddens[-1],
+                                       n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
+                                       use_input_attention=use_input_attention, normalize=normalize)
+        else:
+            self.model = MlPRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type,
+                                       use_input_attention=use_input_attention, normalize=normalize)
+
         if self.attention_type == 'tanh':
             print('Using tanh attention.')
             self.attention = TanhAttention(hiddens[-1], hiddens[-1]//2)
@@ -43,7 +55,7 @@ class RnnAttn(object):
         if self.likelihood_type == 'classification':
             self.likelihood = nn.Sequential()
             self.likelihood.add_module('linear_out', nn.Linear(hiddens[-1], num_class))
-            self.likelihood.add_module('linear_out', nn.Softmax())
+            self.likelihood.add_module('linear_out_soft', nn.Softmax(dim=1))
         else:
             self.likelihood = nn.Linear(hiddens[-1], 1)
 
@@ -52,25 +64,27 @@ class RnnAttn(object):
             self.likelihood = self.likelihood.cuda()
             self.attention = self.attention.cuda()
 
+    def save(self, save_path):
+        state_dict = self.model.state_dict()
+        likelihood_state_dict = self.likelihood.state_dict()
+        attention_dict = self.attention.state_dict()
+        torch.save({'model': state_dict, 'likelihood': likelihood_state_dict, 'attention': attention_dict}, save_path)
+        return 0
+
     def load(self, load_path):
         dicts = torch.load(load_path)
         model_dict = dicts['model']
         likelihood_dict = dicts['likelihood']
+        attention_dict = dicts['attention']
         self.model.load_state_dict(model_dict)
         self.likelihood.load_state_dict(likelihood_dict)
-        return self.model, self.likelihood
-
-    def save(self, save_path):
-        state_dict = self.model.state_dict()
-        likelihood_state_dict = self.likelihood.state_dict()
-        torch.save({'model': state_dict, 'likelihood': likelihood_state_dict}, save_path + '/checkpoint.data')
-        return 0
+        self.attention.load_state_dict(attention_dict)
+        return self.model, self.likelihood, self.attention
 
     def train(self, train_loader, n_epoch, lr=0.01, gamma=0.1, optimizer_choice='adam', save_path=None):
         """
         :param train_loader: training data loader.
         :param n_epoch: number of training epoch.
-        :param likelihood: Likelihood type, 'classification' or 'regression'.
         :param lr: learning rate.
         :param gamma: learning rate decay rate.
         :param optimizer_choice: training optimizer, 'adam' or 'sgd'.
@@ -99,35 +113,38 @@ class RnnAttn(object):
             mse = 0
             mae = 0
             correct = 0
-            for data, target in minibatch_iter:
+            for obs, acts, rewards in minibatch_iter:
                 if torch.cuda.is_available():
-                    data, target = data.cuda(), target.cuda()
+                    obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
                 optimizer.zero_grad()
-                output = self.model(data)[..., -1]
+                output = self.model(obs, acts)
                 _, output = self.attention(output)
                 output = self.likelihood(output)
 
-                if self.likelihood == 'classification':
-                    loss = nn.CrossEntropyLoss(output, target)
+                if self.likelihood_type == 'classification':
+                    loss_fn = nn.CrossEntropyLoss()
                 else:
-                    loss = nn.MSELoss(output, target)
+                    loss_fn = nn.MSELoss()
+                    output = output.flatten()
+                    rewards = rewards.float()
+                loss = loss_fn(output, rewards)
                 loss.backward()
                 optimizer.step()
-                if self.likelihood == 'classification':
+                if self.likelihood_type == 'classification':
                     _, preds = torch.max(output, 1)
-                    correct += preds.eq(target.view_as(preds)).cpu().sum()
+                    correct += preds.eq(rewards.view_as(preds)).cpu().sum()
                 else:
-                    mae += torch.sum(torch.abs(output - target))
-                    mse += torch.sum(torch.square(output - target))
+                    mae += torch.sum(torch.abs(output - rewards))
+                    mse += torch.sum(torch.square(output - rewards))
                 minibatch_iter.set_postfix(loss=loss.item())
 
-            if self.likelihood == 'classification':
-                print('Test set: Accuracy: {}/{} ({}%)'.format(
+            if self.likelihood_type == 'classification':
+                print('Train set: Accuracy: {}/{} ({}%)'.format(
                     correct, len(train_loader.dataset), 100. * correct / float(len(train_loader.dataset))
                 ))
             else:
-                print('Test MAE: {}'.format(mae / float(len(train_loader.dataset))))
-                print('Test MSE: {}'.format(mse / float(len(train_loader.dataset))))
+                print('Train MAE: {}'.format(mae / float(len(train_loader.dataset))))
+                print('Train MSE: {}'.format(mse / float(len(train_loader.dataset))))
             scheduler.step()
 
         if save_path:
@@ -146,21 +163,21 @@ class RnnAttn(object):
         mse = 0
         mae = 0
         correct = 0
-        for data, target in test_loader:
+        for obs, acts, rewards in test_loader:
             if torch.cuda.is_available():
-                data, target = data.cuda(), target.cuda()
-            preds = self.model(data)[..., -1]
+                obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            preds = self.model(obs, acts)
             _, preds = self.attention(preds)
             preds = self.likelihood(preds)
 
-            if self.likelihood == 'classification':
+            if self.likelihood_type == 'classification':
                 _, preds = torch.max(preds, 1)
-                correct += preds.eq(target.view_as(preds)).cpu().sum()
+                correct += preds.eq(rewards.view_as(preds)).cpu().sum()
             else:
-                mae += torch.sum(torch.abs(preds - target))
-                mse += torch.sum(torch.square(preds - target))
+                mae += torch.sum(torch.abs(preds - rewards))
+                mse += torch.sum(torch.square(preds - rewards))
 
-        if self.likelihood == 'classification':
+        if self.likelihood_type == 'classification':
             print('Test set: Accuracy: {}/{} ({}%)'.format(
                 correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
             ))
@@ -172,7 +189,7 @@ class RnnAttn(object):
 
             return mse, mae
 
-    def get_explanations(self, data, normalize=True):
+    def get_explanations(self, obs, acts, rewards):
         """
         :param data: input trajectories.
         :param target: trajectory rewards.
@@ -181,12 +198,11 @@ class RnnAttn(object):
         """
         self.model.eval()
         self.attention.eval()
+        if torch.cuda.is_available():
+            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
 
-        output = self.model(data)
+        output = self.model(obs, acts)
         saliency, _ = self.attention(output)
+        saliency = saliency.squeeze(-1)
 
-        if normalize:
-            saliency = (saliency - np.min(saliency, axis=1)[:, None])
-            saliency = saliency / (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
-
-        return saliency
+        return saliency.detach().numpy()

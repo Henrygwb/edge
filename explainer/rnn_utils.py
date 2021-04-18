@@ -10,22 +10,30 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class CnnRnnEncoder(nn.Module):
-    def __init__(self, seq_len, input_dim, input_channles, hidden_dim, rnn_cell_type='GRU',
+    def __init__(self, seq_len, input_dim, input_channles, hidden_dim, n_action, embed_dim=16, rnn_cell_type='GRU',
                  use_input_attention=False, normalize=False):
         """
         RNN structure (MLP+seq2seq) (\theta_1: RNN parameters).
         :param seq_len: trajectory length.
         :param input_dim: the dimensionality of the input (Concatenate of observation and action).
+        :param input_channles: 1.
+        :param hidden_dim: RNN output dim.
+        :param n_action: total number of actions.
+        :param embed_dim: action embedding dim.
         :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
         :param use_input_attention: Whether to use the input cell attention.
         :param normalize: whether to normalize the inputs.
         """
+
         super(CnnRnnEncoder, self).__init__()
         self.normalize = normalize
         self.seq_len = seq_len
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.rnn_cell_type = rnn_cell_type
+
+        self.act_embedding = nn.Embedding(n_action, embed_dim)
+
         self.cnn_encoder = nn.Sequential()
 
         self.cnn_encoder.add_module('cnn_%d' % 1, nn.Conv2d(input_channles, 32, kernel_size=(3, 3), stride=(2, 2)))
@@ -37,13 +45,13 @@ class CnnRnnEncoder(nn.Module):
         self.cnn_encoder.add_module('cnn_%d' % 3, nn.Conv2d(32, 32, kernel_size=(3, 3), stride=(2, 2)))
         self.cnn_encoder.add_module('relu_%d' % 3, nn.ReLU())
 
-        self.cnn_encoder.add_module('cnn_%d' % 4, nn.Conv2d(32, 32, kernel_size=(3, 3), stride=(2, 2)))
+        self.cnn_encoder.add_module('cnn_%d' % 4, nn.Conv2d(32, 16, kernel_size=(3, 3), stride=(2, 2)))
         self.cnn_encoder.add_module('relu_%d' % 4, nn.ReLU())
 
         self.cnn_encoder.add_module('flatten', nn.Flatten(start_dim=-3, end_dim=-1))
 
         if input_dim == 80 or 84:
-            self.cnn_out_dim = 4 * 4 * 32
+            self.cnn_out_dim = 4 * 4 * 16 + embed_dim
         else:
             raise ValueError ('input dim does not support.')
 
@@ -70,24 +78,33 @@ class CnnRnnEncoder(nn.Module):
                 self.rnn = nn.GRU(input_size=self.cnn_out_dim, hidden_size=hidden_dim, batch_first=True)
             self.rnn_cell_type = 'GRU'
 
-    def forward(self, x, h0=None, c0=None):
+    def forward(self, x, y, h0=None, c0=None):
         # forward function: given an input, return the model output (output at each time and the final time step).
         """
-        :param x: input trajectories (Batch_size, seq_len, input_dim).
+        :param x: input observations (Batch_size, seq_len, input_dim).
+        :param y: input actions (Batch_size, seq_len).
         :param h0: Initial hidden state at time t_0 (Batch_size, 1, hidden_dim).
         :param c0: Initial cell state at time t_0 (Batch_size, 1, hidden_dim).
         :return step_embed: the latent representation of each time step (batch_size, seq_len, hidden_dim).
         :return traj_embed: the latend representation of each trajectory (batch_size, hidden_dim).
         """
+        num_traj = x.size(0)
         if self.normalize:
             mean = torch.mean(x, dim=(0, 1))[None, None, :]
             std = torch.std(x, dim=(0, 1))[None, None, :]
             x = (x - mean) / std
-        cnn_encoded = self.cnn_encoder(x)  # (N, T, D1) get the hidden representation of every time step.
+        x = x.view(-1, 1, self.input_dim, self.input_dim)
+        obs_encoded = self.cnn_encoder(x)  # (N, T, D1) get the hidden representation of every time step.
+        obs_encoded = obs_encoded.view(num_traj, self.seq_len, obs_encoded.size(-1))
+        act_encoded = self.act_embedding(y)
+        cnn_encoded = torch.cat((obs_encoded, act_encoded), -1)
         if self.rnn_cell_type == 'GRU':
             step_embed, _ = self.rnn(cnn_encoded, h0)
         else:
-            step_embed, _, _ = self.rnn(cnn_encoded, h0, c0)
+            if h0 is None or c0 is None:
+                step_embed, _ = self.rnn(cnn_encoded, None)
+            else:
+                step_embed, _ = self.rnn(cnn_encoded, (h0, c0))
         return step_embed
 
 
@@ -107,7 +124,7 @@ class MlPRnnEncoder(nn.Module):
         super(MlPRnnEncoder, self).__init__()
         self.normalize = normalize
         self.seq_len = seq_len
-        self.input_dim = input_dim
+        self.input_dim = input_dim + 1
         self.hidden_dim = hiddens[-1]
         self.rnn_cell_type = rnn_cell_type
         self.mlp_encoder = nn.Sequential()
@@ -142,24 +159,28 @@ class MlPRnnEncoder(nn.Module):
                 self.rnn = nn.GRU(input_size=hiddens[-2], hidden_size=hiddens[-1], batch_first=True)
             self.rnn_cell_type = 'GRU'
 
-    def forward(self, x, h0=None, c0=None):
+    def forward(self, x, y, h0=None, c0=None):
         # forward function: given an input, return the model output (output at each time and the final time step).
         """
-        :param x: input trajectories (Batch_size, seq_len, input_dim).
+        :param x: input observations (Batch_size, seq_len, input_dim).
+        :param y: input actions (Batch_size, seq_len).
         :param h0: Initial hidden state at time t_0 (Batch_size, 1, hidden_dim).
         :param c0: Initial cell state at time t_0 (Batch_size, 1, hidden_dim).
         :return step_embed: the latent representation of each time step (batch_size, seq_len, hidden_dim).
-        :return traj_embed: the latend representation of each trajectory (batch_size, hidden_dim).
         """
         if self.normalize:
             mean = torch.mean(x, dim=(0, 1))[None, None, :]
             std = torch.std(x, dim=(0, 1))[None, None, :]
             x = (x - mean) / std
+        x = torch.cat((x, y[..., None]), -1)
         mlp_encoded = self.mlp_encoder(x)  # (N, T, Hiddens[-2]) get the hidden representation of every time step.
         if self.rnn_cell_type == 'GRU':
-            step_embed, _ = self.rnn(mlp_encoded, h0)
+            step_embed, _ = self.rnn(cnn_encoded, h0)
         else:
-            step_embed, _, _ = self.rnn(mlp_encoded, h0, c0)
+            if h0 is None or c0 is None:
+                step_embed, _ = self.rnn(cnn_encoded, None)
+            else:
+                step_embed, _ = self.rnn(cnn_encoded, (h0, c0))
         return step_embed
 
 
@@ -259,10 +280,10 @@ class LSTMWithInputCellAttention(nn.Module):
             gates = M @ self.weight_iBarh + h_t @ self.weight_hh + self.bias
 
             i_t, f_t, g_t, o_t = (
-                torch.sigmoid(gates[:, :, :HS]),  # input
-                torch.sigmoid(gates[:, :, HS:HS * 2]),  # forget
-                torch.tanh(gates[:, :, HS * 2:HS * 3]),
-                torch.sigmoid(gates[:, :, HS * 3:]),  # output
+                torch.sigmoid(gates[..., :HS]),  # input
+                torch.sigmoid(gates[..., HS:HS * 2]),  # forget
+                torch.tanh(gates[..., HS * 2:HS * 3]),
+                torch.sigmoid(gates[..., HS * 3:]),  # output
             )
 
             c_t = f_t * c_t + i_t * g_t
@@ -270,7 +291,7 @@ class LSTMWithInputCellAttention(nn.Module):
             hidden_seq.append(h_t.unsqueeze(Dim.batch))
 
         hidden_seq = torch.cat(hidden_seq, dim=Dim.batch)
-        hidden_seq = hidden_seq.squeeze(1)
+        # hidden_seq = hidden_seq.squeeze(1) # cause error when batch_size = 1.
 
         hidden_seq = hidden_seq.transpose(Dim.batch, Dim.seq).contiguous()
         return hidden_seq, (h_t, c_t)
@@ -320,8 +341,8 @@ class GRUWithInputCellAttention(LSTMWithInputCellAttention):
             gi = M @ self.weight_iBarh + self.bias_i
             gh = h_t @ self.weight_hh + self.bias_h
 
-            i_r, i_i, i_n = gi.chunk(3, 2)
-            h_r, h_i, h_n = gh.chunk(3, 2)
+            i_r, i_i, i_n = gi.chunk(3, -1)
+            h_r, h_i, h_n = gh.chunk(3, -1)
 
             r_t = torch.sigmoid(i_r + h_r)
             z_t = torch.sigmoid(i_i + h_i)
@@ -331,7 +352,7 @@ class GRUWithInputCellAttention(LSTMWithInputCellAttention):
             hidden_seq.append(h_t.unsqueeze(Dim.batch))
 
         hidden_seq = torch.cat(hidden_seq, dim=Dim.batch)
-        hidden_seq = hidden_seq.squeeze(1)
+        # hidden_seq = hidden_seq.squeeze(1)
 
         hidden_seq = hidden_seq.transpose(Dim.batch, Dim.seq).contiguous()
         return hidden_seq, h_t
@@ -390,6 +411,8 @@ class RationaleNetGenerator(nn.Module):
                                   normalize)
         self.z_dim = 2
         self.hidden = nn.Linear(hiddens[-1], self.z_dim)
+
+
         if torch.cuda.is_available():
             self.cuda = True
         else:

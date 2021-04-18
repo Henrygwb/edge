@@ -17,24 +17,30 @@ from .rnn_utils import CnnRnnEncoder, MlPRnnEncoder
 # Concatenate action and observation as the input and the final reward as the output.
 # Train the Seq2one + Seq2seq RNN, and use the prediction difference of p_t - p_{t-1} as the importance of r_t.
 class Rudder(object):
-    def __init__(self, seq_len, input_dim, hiddens, encoder_type='MLP', dropout_rate=0.25, rnn_cell_type='GRU',
-                 normalize=False):
+    def __init__(self, seq_len, input_dim, hiddens, n_action, embed_dim=16, encoder_type='MLP', dropout_rate=0.25,
+                 rnn_cell_type='GRU', normalize=False):
         """
         :param seq_len: trajectory length.
         :param input_dim: the dimensionality of the input (Concatenate of observation and action).
         :param hiddens: hidden layer dimensions.
-        :param dropout_rate: dropout rate.
+        :param n_action: number of actions.
+        :param embed_dim: actions embedding dim.
         :param encoder_type: encoder type ('MLP' or 'CNN').
+        :param dropout_rate: dropout rate.
         :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
         :param normalize: whether to normalize the inputs.
         """
         self.encoder_type = encoder_type
         if self.encoder_type == 'CNN':
             self.model = CnnRnnEncoder(seq_len, input_dim, input_channles=1, hidden_dim=hiddens[-1],
-                                       rnn_cell_type=rnn_cell_type, normalize=normalize)
+                                       n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
+                                       normalize=normalize)
         else:
             self.model = MlPRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
-        self.fc_out = torch.nn.Linear(hiddens[-1], 1)
+        self.fc_out = torch.nn.Sequential(
+            torch.nn.Linear(hiddens[-1], 1),
+            torch.nn.Flatten())
+
         if torch.cuda.is_available():
             self.model = self.model.cuda()
             self.fc_out = self.fc_out.cuda()
@@ -56,7 +62,7 @@ class Rudder(object):
     def save(self, save_path):
         state_dict = self.model.state_dict()
         fc_dict = self.fc_out.state_dict()
-        torch.save({'model': state_dict, 'fc': fc_dict}, save_path + '/checkpoint.data')
+        torch.save({'model': state_dict, 'fc': fc_dict}, save_path)
         return 0
 
     def load(self, load_path):
@@ -94,21 +100,21 @@ class Rudder(object):
             mse = 0
             mae = 0
             minibatch_iter = tqdm.tqdm(train_loader, desc=f"(Epoch {epoch}) Minibatch")
-            for data, target in minibatch_iter:
+            for obs, acts, rewards in minibatch_iter:
                 if torch.cuda.is_available():
-                    data, target = data.cuda(), target.cuda()
+                    obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
                 optimizer.zero_grad()
-                output = self.model(data)
+                output = self.model(obs, acts)
                 output = self.fc_out(output)
-                loss = self.loss(output, target)
+                loss = self.loss(output, rewards)
                 loss.backward()
                 optimizer.step()
                 minibatch_iter.set_postfix(loss=loss.item())
-                mae += torch.sum(torch.abs(output - target))
-                mse += torch.sum(torch.square(output - target))
+                mae += torch.sum(torch.abs(output[:, -1] - rewards))
+                mse += torch.sum(torch.square(output[:, -1] - rewards))
 
-            print('Test MAE: {}'.format(mae / float(len(train_loader.dataset))))
-            print('Test MSE: {}'.format(mse / float(len(train_loader.dataset))))
+            print('Training MAE: {}'.format(mae / float(len(train_loader.dataset))))
+            print('Traing MSE: {}'.format(mse / float(len(train_loader.dataset))))
             scheduler.step()
 
         if save_path:
@@ -125,47 +131,49 @@ class Rudder(object):
 
         mse = 0
         mae = 0
-        for data, target in test_loader:
+        for obs, acts, rewards in test_loader:
             if torch.cuda.is_available():
-                data, target = data.cuda(), target.cuda()
-            preds = self.model(data)
-            mae += torch.sum(torch.abs(preds - target))
-            mse += torch.sum(torch.square(preds - target))
+                obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            preds = self.model(obs, acts)
+            preds = self.fc_out(preds)[..., -1]
+            mae += torch.sum(torch.abs(preds - rewards))
+            mse += torch.sum(torch.square(preds - rewards))
 
         print('Test MAE: {}'.format(mae/float(len(test_loader.dataset))))
         print('Test MSE: {}'.format(mse/float(len(test_loader.dataset))))
         return mse, mae
 
-    def get_explanations(self, data, target, normalize=True):
+    def get_explanations(self, obs, acts, rewards, normalize=True):
         """
-        :param data: input trajectories.
-        :param target: trajectory rewards.
+        :param obs: input observations.
+        :param acts: input actions.
+        :param rewards: trajectory rewards.
         :param normalize: Normalization or not.
         :return: time step importance.
         """
         self.model.eval()
-        self.fc_out.train()
+        self.fc_out.eval()
 
         if torch.cuda.is_available():
-            data, target = data.cuda(), target.cuda()
+            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
 
         # Apply our reward redistribution model to the samples
-        # todo: check the dimensions (N, seq_len).
-        predictions = self.model(data)[..., 0]
+        preds = self.model(obs, acts)
+        preds = self.fc_out(preds)
 
         # Use the differences of predictions as redistributed reward
-        redistributed_reward = predictions[:, 1:] - predictions[:, :-1]
+        redistributed_reward = preds[:, 1:] - preds[:, :-1]
 
         # For the first timestep we will take (0-predictions[:, :1]) as redistributed reward
-        redistributed_reward = torch.cat([predictions[:, :1], redistributed_reward], dim=1)
+        redistributed_reward = torch.cat([preds[:, :1], redistributed_reward], dim=1)
 
         predicted_returns = redistributed_reward.sum(dim=1)
-        prediction_error = target - predicted_returns
+        prediction_error = rewards - predicted_returns
 
         # Distribute correction for prediction error equally over all sequence positions
         redistributed_reward += prediction_error[:, None] / redistributed_reward.shape[1]
+        redistributed_reward = redistributed_reward.detach().numpy()
         if normalize:
-            redistributed_reward = (redistributed_reward - np.min(redistributed_reward, axis=1)[:, None])
-            redistributed_reward = redistributed_reward / (np.max(redistributed_reward, axis=1)[:, None] -
-                                                           np.min(redistributed_reward, axis=1)[:, None])
-        return redistributed_reward
+            saliency = (redistributed_reward - np.min(redistributed_reward, axis=1)[:, None]) / \
+                       (np.max(redistributed_reward, axis=1)[:, None] - np.min(redistributed_reward, axis=1)[:, None])
+        return saliency
