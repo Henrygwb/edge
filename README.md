@@ -1,4 +1,4 @@
-# trajectory-level explanation using Nonparametric Bayesian.
+# Trajectory-level explanation using Nonparametric Bayesian.
 
 ## Code structure.
 
