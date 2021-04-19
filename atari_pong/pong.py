@@ -36,8 +36,8 @@ env_name = 'Pong-v0'
 agent_path = 'agents/{}/'.format(env_name.lower())
 #traj_path = 'trajs/Pong-v0.npz'
 traj_path = None
-num_traj = 100
-num_traj_for_exp = 10
+num_traj = 500
+num_traj_for_exp = 500
 
 if traj_path is None:
     # Load agent, build environment, and play an episode.
@@ -50,7 +50,7 @@ if traj_path is None:
 
     history = rollout(model, env, num_traj=num_traj, max_ep_len=200, render=False)
 
-    np.savez_compressed('trajs/'+env_name+'.npz', observations=history['observations'], actions=history['actions']
+    np.savez_compressed('trajs/'+env_name+'_'+str(num_traj)+'_orin.npz', observations=history['observations'], actions=history['actions']
                         , rewards=history['rewards'], values=history['values'])
 else:
     history = np.load(traj_path)
@@ -79,6 +79,8 @@ seq_len = values.shape[1]
 input_dim = obs.shape[3]
 n_action = np.max(acts) + 1
 train_size = int(obs.shape[0]*0.8)
+
+np.savez_compressed('trajs/'+env_name+'_'+str(num_traj)+'_training.npz', observations=obs, actions=acts, values=values, final_rewards=final_rewards, rewards=rewards)
 
 obs = torch.tensor(obs[..., None, :, :], dtype=torch.float32)
 acts = torch.tensor(acts, dtype=torch.long)
