@@ -42,7 +42,7 @@ class RationaleNet(object):
         if self.likelihood_type == 'classification':
             self.likelihood = nn.Sequential()
             self.likelihood.add_module('linear_out', nn.Linear(hiddens[-1], num_class))
-            self.likelihood.add_module('linear_out_softmax', nn.Softmax())
+            self.likelihood.add_module('linear_out_softmax', nn.Softmax(dim=1))
         else:
             self.likelihood = nn.Linear(hiddens[-1], 1)
 
@@ -196,7 +196,7 @@ class RationaleNet(object):
             obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
 
         saliency = self.generator(obs, acts)
-        saliency = saliency.detach().numpy()
+        saliency = saliency.cpu().detach().numpy()
 
         if normalize:
             saliency = (saliency - np.min(saliency, axis=1)[:, None]) \

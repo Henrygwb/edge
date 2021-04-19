@@ -189,7 +189,7 @@ class RnnSaliency(object):
         else:
             x = torch.cat((obs, acts[..., None]), -1)
             encoded = self.model.mlp_encoder(x)  # (N, T, Hiddens[-2]) get the hidden representation of every time step.
-        return encoded
+        return encoded.cpu()
 
     def compute_gradient_rnn(self, cnn_encoded, rewards):
 
@@ -212,7 +212,7 @@ class RnnSaliency(object):
             preds = preds.flatten()
 
         grad = torch.autograd.grad(torch.unbind(preds), cnn_encoded, retain_graph=True)[0]
-        return grad
+        return grad.cpu()
 
     def compute_gradient_input(self, obs, acts, rewards):
 
@@ -234,7 +234,7 @@ class RnnSaliency(object):
 
         grad = torch.autograd.grad(torch.unbind(preds), obs, retain_graph=True)[0]
 
-        return grad
+        return grad.cpu()
 
     def get_explanations(self, obs, acts, rewards, saliency_method='integrated_gradient', back2rnn=True, n_samples=10,
                          stdev_spread=0.15, normalize=True):
@@ -404,7 +404,7 @@ class RnnSaliency(object):
         else:
             saliency = saliency.sum([-3, -2, -1])
 
-        saliency = saliency.detach().numpy()
+        saliency = saliency.cpu().detach().numpy()
         if normalize:
             saliency = (saliency - np.min(saliency, axis=1)[:, None]) \
                        / (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])

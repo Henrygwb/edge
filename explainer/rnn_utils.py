@@ -422,9 +422,9 @@ class RationaleNetGenerator(nn.Module):
         self.hidden = nn.Linear(hiddens[-1], self.z_dim)
 
         if torch.cuda.is_available():
-            self.cuda = True
+            self.use_cuda = True
         else:
-            self.cuda = False
+            self.use_cuda = False
 
     @staticmethod
     def gumbel_softmax(input, temperature=1.0 / 10.0, cuda=False):
@@ -451,7 +451,7 @@ class RationaleNetGenerator(nn.Module):
         :return: prob of each token being selected.
         """
         logits = self.hidden(activ) # [B, L, 2]
-        probs = self.gumbel_softmax(logits, cuda=self.cuda) # [B, L, 2]
+        probs = self.gumbel_softmax(logits, cuda=self.use_cuda) # [B, L, 2]
         z = probs[:, : ,1] # [B, L]
         return z # [B, L]
 
@@ -496,9 +496,9 @@ class RationaleNetEncoder(nn.Module):
             self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
 
         if torch.cuda.is_available():
-            self.cuda = True
+            self.use_cuda = True
         else:
-            self.cuda = False
+            self.use_cuda = False
 
     def forward(self, x, y, z=None):
         """

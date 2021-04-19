@@ -205,4 +205,4 @@ class RnnAttn(object):
         saliency, _ = self.attention(output)
         saliency = saliency.squeeze(-1)
 
-        return saliency.detach().numpy()
+        return saliency.cpu().detach().numpy()

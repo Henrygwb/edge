@@ -34,8 +34,8 @@ def obs_resize(obs):
 # Setup env, load the target agent, and collect the trajectories.
 env_name = 'Pong-v0'
 agent_path = 'agents/{}/'.format(env_name.lower())
-# traj_path = 'trajs/Pong-v0.npz'
-traj_path = None
+traj_path = 'trajs/Pong-v0.npz'
+#traj_path = None
 num_traj = 15
 
 if traj_path is None:

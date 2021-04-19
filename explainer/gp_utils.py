@@ -610,6 +610,9 @@ class CustomizedGaussianLikelihood(Likelihood):
         for i in range(num_data):
             left_weight[i, i*self.num_features:(i+1)*self.num_features] = self.mixing_weights.flatten()
             mask[i, i*self.num_features:(i+1)*self.num_features] = torch.ones_like(self.mixing_weights.flatten())
+        if torch.cuda.is_available():
+            left_weight = left_weight.cuda()
+            mask = mask.cuda()
         right_weight = w_transpose.repeat(num_data, 1)
         exp_ff = left_weight @ exp_ff
         exp_ff = exp_ff * mask
@@ -687,6 +690,9 @@ class CustomizedGaussianLikelihood(Likelihood):
         left_weight = torch.zeros(num_data, num_data*self.num_features)
         for i in range(num_data):
             left_weight[i, i*self.num_features:(i+1)*self.num_features] = self.mixing_weights.flatten()
+        if torch.cuda.is_available():
+            left_weight = left_weight.cuda()
+
         right_weight = left_weight.transpose(-2, -1)
 
         if settings.trace_mode.on():

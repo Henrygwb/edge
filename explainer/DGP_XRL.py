@@ -280,7 +280,7 @@ class DGPXRL(object):
         self.likelihood.eval()
 
         if torch.cuda.is_available():
-            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            obs, acts = obs.cuda(), acts.cuda()
 
         importance = self.likelihood.mixing_weights
         step_embedding, traj_embedding = self.model.encoder(obs, acts)  # (N, T, P) -> (N, T, D), (N, D).
@@ -291,7 +291,7 @@ class DGPXRL(object):
         covar_step = self.model.gp_layer.step_kernel(features)
         covar_traj = self.model.gp_layer.traj_kernel(features)
         # TODO: combine importance weight with covariance structure.
-        importance = importance.detach().numpy()
+        importance = importance.cpu().detach().numpy()
         if len(importance.shape) == 2:
             importance = importance.transpose()
             importance = np.repeat(importance[None, ...], rewards.shape[0], axis=0)
