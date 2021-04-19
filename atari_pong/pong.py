@@ -34,9 +34,10 @@ def obs_resize(obs):
 # Setup env, load the target agent, and collect the trajectories.
 env_name = 'Pong-v0'
 agent_path = 'agents/{}/'.format(env_name.lower())
-traj_path = 'trajs/Pong-v0.npz'
-#traj_path = None
-num_traj = 15
+#traj_path = 'trajs/Pong-v0.npz'
+traj_path = None
+num_traj = 100
+num_traj_for_exp = 10
 
 if traj_path is None:
     # Load agent, build environment, and play an episode.
@@ -97,6 +98,7 @@ save_path = 'exp_model_results/'
 
 if args.explainer == 'value':
     # Explainer 1 - Value function.
+    values = values[0:num_traj_for_exp, ]
     sal_value = (values - np.min(values, axis=1)[:, None]) / \
                 (np.max(values, axis=1)[:, None] - np.min(values, axis=1)[:, None])
     np.savez_compressed(save_path+'value_exp.npz', sal=sal_value)
@@ -110,7 +112,7 @@ elif args.explainer == 'rudder':
     rudder_explainer.test(test_loader)
     rudder_explainer.load(save_path+name+'_model.data')
     rudder_explainer.test(test_loader)
-    sal_rudder = rudder_explainer.get_explanations(obs, acts, final_rewards)
+    sal_rudder = rudder_explainer.get_explanations(obs[0:num_traj_for_exp, ], acts[0:num_traj_for_exp, ], final_rewards[0:num_traj_for_exp, ])
     np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rudder)
 
 elif args.explainer == 'saliency':
@@ -126,6 +128,9 @@ elif args.explainer == 'saliency':
     saliency_explainer.test(test_loader)
     saliency_explainer.load(save_path+name+'_model.data')
     saliency_explainer.test(test_loader)
+    obs = obs[0:num_traj_for_exp, ]
+    acts = acts[0:num_traj_for_exp, ]
+    final_rewards[0:num_traj_for_exp, ]
     for back2rnn in [False, True]:
         sal_g = saliency_explainer.get_explanations(obs, acts, final_rewards, saliency_method='gradient',
                                                     back2rnn=back2rnn)
@@ -161,7 +166,7 @@ elif args.explainer == 'attention':
     attention_explainer.test(test_loader)
     attention_explainer.load(save_path+name+'_model.data')
     attention_explainer.test(test_loader)
-    sal_attention = attention_explainer.get_explanations(obs, acts, final_rewards)
+    sal_attention = attention_explainer.get_explanations(obs[0:num_traj_for_exp, ], acts[0:num_traj_for_exp, ], final_rewards[0:num_traj_for_exp, ])
     np.savez_compressed(save_path+name+'_exp.npz', sal=sal_attention)
 
 elif args.explainer == 'rationale':
@@ -175,7 +180,7 @@ elif args.explainer == 'rationale':
     rationale_explainer.test(test_loader)
     rationale_explainer.load(save_path+name+'_model.data')
     rationale_explainer.test(test_loader)
-    sal_rationale = rationale_explainer.get_explanations(obs, acts, final_rewards)
+    sal_rationale = rationale_explainer.get_explanations(obs[0:num_traj_for_exp, ], acts[0:num_traj_for_exp, ], final_rewards[0:num_traj_for_exp, ])
     np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rationale)
 
 elif args.explainer == 'dgp':
@@ -205,9 +210,9 @@ elif args.explainer == 'dgp':
     dgp_explainer.test(test_loader)
     dgp_explainer.load(save_path+name+'_model.data')
     dgp_explainer.test(test_loader)
-    sal_rationale, covariance = dgp_explainer.get_explanations(obs, acts, final_rewards)
-    # np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rationale, full_covar=covariance[0], traj_cova=covariance[1],
-    #                     step_covar=covariance[2])
+    sal_rationale, covariance = dgp_explainer.get_explanations(obs[0:num_traj_for_exp, ], acts[0:num_traj_for_exp, ], final_rewards[0:num_traj_for_exp, ])
+    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rationale, full_covar=covariance[0], traj_cova=covariance[1],
+                        step_covar=covariance[2])
 
     # VisualizeCovar(covariance[0], save_path+name+'_dgp_full_covar.pdf')
     # VisualizeCovar(covariance[1], save_path+name+'_dgp_traj_covar.pdf')

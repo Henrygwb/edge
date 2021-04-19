@@ -281,7 +281,8 @@ class DGPXRL(object):
 
         if torch.cuda.is_available():
             obs, acts = obs.cuda(), acts.cuda()
-
+        obs=obs[0:int(obs.shape[0]/5), ]
+        acts=acts[0:int(acts.shape[0]/5), ]
         importance = self.likelihood.mixing_weights
         step_embedding, traj_embedding = self.model.encoder(obs, acts)  # (N, T, P) -> (N, T, D), (N, D).
         traj_embedding = traj_embedding[:, None, :].repeat(1, obs.shape[1], 1)  # (N, D) -> (N, T, D)
