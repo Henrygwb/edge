@@ -38,7 +38,7 @@ The `atari_pong` contains the explanation pipeline, pretrained agents, and the e
   - Note 3: Save the original observations rather than the preprocessed ones used as policy network inputs (For better visualization purpose). Conduct the same preprocess when training all the explanation models.
   - Note 4: the trajectories have varied lengthes, pad them into the same length: pad at the front, not the end; pad with a meaningless number (Be careful with 0, '-1' and '1', it will cause confusion for rewards and categorial actions).
   - Note 5: control the traj length with some parameter like `max_ep_len` and discard the trajs that do not finish at the maximum length.
-  - Note 5: the shape of the save items: 
+  - Note 6: the shape of the save items: 
     - Observations: [n_traj, seq_len, input_channel, input_dim, input_dim] or [n_traj, seq_len, input_dim].
     - Actions: [n_traj, seq_len] or [n_traj, seq_len, act_dim].
     - Rewards: [n_traj, seq_len].
