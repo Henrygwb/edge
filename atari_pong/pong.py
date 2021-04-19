@@ -1,6 +1,9 @@
+import os, sys
+sys.path.append('..')
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 import torch
 import numpy as np
-import gym, os, sys, argparse
+import gym, argparse
 from scipy.misc import imresize
 from explainer.DGP_XRL import DGPXRL
 from explainer.Rudder_XRL import Rudder
@@ -9,10 +12,11 @@ from explainer.gp_utils import VisualizeCovar
 from atari_pong.utils import NNPolicy, rollout
 from explainer.RnnSaliency_XRL import RnnSaliency
 from explainer.RationaleNet_XRL import RationaleNet
-sys.path.append('..')
+
+
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--explainer", type=str, default='dgp')
+parser.add_argument("--explainer", type=str, default='value')
 
 args = parser.parse_args()
 
@@ -30,8 +34,8 @@ def obs_resize(obs):
 # Setup env, load the target agent, and collect the trajectories.
 env_name = 'Pong-v0'
 agent_path = 'agents/{}/'.format(env_name.lower())
-traj_path = 'trajs/Pong-v0.npz'
-# traj_path = None
+# traj_path = 'trajs/Pong-v0.npz'
+traj_path = None
 num_traj = 15
 
 if traj_path is None:
