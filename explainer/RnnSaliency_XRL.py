@@ -10,7 +10,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
-from .rnn_utils import MlPRnnEncoder, CnnRnnEncoder
+from .rnn_utils import MlpRnnEncoder, CnnRnnEncoder
 
 
 # Baseline 2: Vanilla [input-cell] RNN + a saliency method (IG).
@@ -41,7 +41,7 @@ class RnnSaliency(object):
                                        n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                        use_input_attention=use_input_attention, normalize=normalize)
         else:
-            self.model = MlPRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type,
+            self.model = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type,
                                        use_input_attention=use_input_attention, normalize=normalize)
 
         if self.likelihood_type == 'classification':
@@ -171,7 +171,7 @@ class RnnSaliency(object):
 
             return mse, mae
 
-    def compute_cnn_encoded(self, obs, acts):
+    def compute_encoded(self, obs, acts):
         self.model.eval()
         self.likelihood.eval()
 
@@ -179,14 +179,17 @@ class RnnSaliency(object):
 
         if torch.cuda.is_available():
             obs, acts = obs.cuda(), acts.cuda()
-
-        obs = obs.view(-1, 1, obs.shape[-1], obs.shape[-1])
-        obs_encoded = self.model.cnn_encoder(obs)  # (N, T, D1) get the hidden representation of every time step.
-        obs_encoded = obs_encoded.view(int(obs.shape[0]/self.model.seq_len), self.model.seq_len,
-                                       obs_encoded.size(-1))
-        act_encoded = self.model.act_embedding(acts)
-        cnn_encoded = torch.cat((obs_encoded, act_encoded), -1)
-        return cnn_encoded
+        if self.encoder_type == 'CNN':
+            obs = obs.view(-1, 1, obs.shape[-1], obs.shape[-1])
+            obs_encoded = self.model.cnn_encoder(obs)  # (N, T, D1) get the hidden representation of every time step.
+            obs_encoded = obs_encoded.view(int(obs.shape[0]/self.model.seq_len), self.model.seq_len,
+                                           obs_encoded.size(-1))
+            act_encoded = self.model.act_embedding(acts)
+            encoded = torch.cat((obs_encoded, act_encoded), -1)
+        else:
+            x = torch.cat((obs, acts[..., None]), -1)
+            encoded = self.model.mlp_encoder(x)  # (N, T, Hiddens[-2]) get the hidden representation of every time step.
+        return encoded
 
     def compute_gradient_rnn(self, cnn_encoded, rewards):
 
@@ -250,7 +253,7 @@ class RnnSaliency(object):
         if saliency_method == 'gradient':
             print('Using vanilla gradient.')
             if back2rnn:
-                cnn_encoded = self.compute_cnn_encoded(obs, acts)
+                cnn_encoded = self.compute_encoded(obs, acts)
                 saliency = self.compute_gradient_rnn(cnn_encoded, rewards)
             else:
                 saliency = self.compute_gradient_input(obs, acts, rewards)
@@ -259,7 +262,7 @@ class RnnSaliency(object):
             print('Using integrated gradient.')
 
             if back2rnn:
-                cnn_encoded = self.compute_cnn_encoded(obs, acts)
+                cnn_encoded = self.compute_encoded(obs, acts)
                 baseline = torch.zeros_like(cnn_encoded)
                 assert baseline.shape == cnn_encoded.shape
                 x_diff = cnn_encoded - baseline
@@ -300,7 +303,7 @@ class RnnSaliency(object):
             print('Using Unifintgrad.')
 
             if back2rnn:
-                cnn_encoded = self.compute_cnn_encoded(obs, acts)
+                cnn_encoded = self.compute_encoded(obs, acts)
                 baseline = torch.rand(cnn_encoded.shape)
                 baseline = (torch.max(cnn_encoded) - torch.min(cnn_encoded)) * baseline + torch.min(cnn_encoded)
                 assert baseline.shape == cnn_encoded.shape
@@ -327,7 +330,7 @@ class RnnSaliency(object):
             print('Using smooth gradient.')
 
             if back2rnn:
-                cnn_encoded = self.compute_cnn_encoded(obs, acts)
+                cnn_encoded = self.compute_encoded(obs, acts)
                 stdev = stdev_spread / (torch.max(cnn_encoded) - torch.min(cnn_encoded)).item()
                 saliency = torch.zeros_like(cnn_encoded)
                 for x in range(n_samples):
@@ -349,7 +352,7 @@ class RnnSaliency(object):
         elif saliency_method == 'expgrad':
             print('Using Expgrad.')
             if back2rnn:
-                cnn_encoded = self.compute_cnn_encoded(obs, acts)
+                cnn_encoded = self.compute_encoded(obs, acts)
                 stdev = stdev_spread / (torch.max(cnn_encoded) - torch.min(cnn_encoded)).item()
                 saliency = torch.zeros_like(cnn_encoded)
                 for x in range(n_samples):
@@ -370,7 +373,7 @@ class RnnSaliency(object):
             print('Using vargrad.')
             saliency = []
             if back2rnn:
-                cnn_encoded = self.compute_cnn_encoded(obs, acts)
+                cnn_encoded = self.compute_encoded(obs, acts)
                 stdev = stdev_spread / (torch.max(cnn_encoded) - torch.min(cnn_encoded)).item()
                 for x in range(n_samples):
                     noise = torch.normal(0, stdev, cnn_encoded.shape)
@@ -391,12 +394,12 @@ class RnnSaliency(object):
         else:
             print('Using vanilla gradient.')
             if back2rnn:
-                cnn_encoded = self.compute_cnn_encoded(obs, acts)
+                cnn_encoded = self.compute_encoded(obs, acts)
                 saliency = self.compute_gradient_rnn(cnn_encoded, rewards)
             else:
                 saliency = self.compute_gradient_input(obs, acts, rewards)
 
-        if back2rnn:
+        if back2rnn or self.encoder_type == 'MLP':
             saliency = saliency.sum(-1)
         else:
             saliency = saliency.sum([-3, -2, -1])

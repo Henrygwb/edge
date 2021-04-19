@@ -10,7 +10,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
-from .rnn_utils import MlPRnnEncoder, CnnRnnEncoder, TanhAttention, DotAttention
+from .rnn_utils import MlpRnnEncoder, CnnRnnEncoder, TanhAttention, DotAttention
 
 
 # Baseline 3. RNN with attention [Attention is not Explanation].
@@ -42,7 +42,7 @@ class RnnAttn(object):
                                        n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                        use_input_attention=use_input_attention, normalize=normalize)
         else:
-            self.model = MlPRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type,
+            self.model = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type,
                                        use_input_attention=use_input_attention, normalize=normalize)
 
         if self.attention_type == 'tanh':

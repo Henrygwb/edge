@@ -49,9 +49,10 @@ from .gp_utils import DGPXRLModel, CustomizedGaussianLikelihood, CustomizedSoftm
 
 class DGPXRL(object):
     def __init__(self, train_loader, seq_len, input_dim, hiddens, likelihood_type, lr, optimizer_type, n_epoch, gamma,
-                 num_inducing_points, inducing_points=None, mean_inducing_points=None, dropout_rate=0.25, num_class=None,
-                 rnn_cell_type='GRU', normalize=False, grid_bounds=None, using_ngd=False, using_ksi=False,
-                 using_ciq=False, using_sor=False, using_OrthogonallyDecouple=False):
+                 num_inducing_points, n_action, encoder_type='MLP', embed_dim=16, inducing_points=None,
+                 mean_inducing_points=None, dropout_rate=0.25, num_class=None, rnn_cell_type='GRU', normalize=False,
+                 grid_bounds=None, using_ngd=False, using_ksi=False, using_ciq=False, using_sor=False,
+                 using_OrthogonallyDecouple=False):
         """
         Define the full model.
         :param train_loader: training data loader.
@@ -64,6 +65,9 @@ class DGPXRL(object):
         :param n_epoch.
         :param gamma.
         :param num_inducing_points: number of inducing points.
+        :param n_action: number of actions.
+        :param embed_dim: actions embedding dim.
+        :param encoder_type: encoder type ('MLP' or 'CNN').
         :param inducing_points: inducing points at the latent space Z (num_inducing_points, 2*hiddens[-1]).
         :param mean_inducing_points: mean inducing points, used for orthogonally decoupled VGP.
         :param dropout_rate: MLP dropout rate.
@@ -97,11 +101,11 @@ class DGPXRL(object):
 
         # Compute the loss (ELBO) likelihood + KL divergence.
         self.model = DGPXRLModel(seq_len=seq_len, input_dim=input_dim, hiddens=hiddens, likelihood_type=likelihood_type,
-                                 dropout_rate=dropout_rate, rnn_cell_type=rnn_cell_type, normalize=normalize,
-                                 num_inducing_points=num_inducing_points, inducing_points=inducing_points,
-                                 mean_inducing_points=mean_inducing_points, grid_bounds=grid_bounds, using_ngd=using_ngd,
-                                 using_ksi=using_ksi, using_ciq=using_ciq, using_sor=using_sor,
-                                 using_OrthogonallyDecouple=using_OrthogonallyDecouple)
+                                 n_action=n_action, encoder_type=encoder_type, embed_dim=embed_dim, dropout_rate=dropout_rate,
+                                 rnn_cell_type=rnn_cell_type, normalize=normalize, num_inducing_points=num_inducing_points,
+                                 inducing_points=inducing_points, mean_inducing_points=mean_inducing_points,
+                                 grid_bounds=grid_bounds, using_ngd=using_ngd, using_ksi=using_ksi, using_ciq=using_ciq,
+                                 using_sor=using_sor, using_OrthogonallyDecouple=using_OrthogonallyDecouple)
         print(self.model)
 
         # First, sampling from q(f) with shape [n_sample, n_data].
@@ -159,6 +163,12 @@ class DGPXRL(object):
             self.model = self.model.cuda()
             self.likelihood = self.likelihood.cuda()
 
+    def save(self, save_path):
+        state_dict = self.model.state_dict()
+        likelihood_state_dict = self.likelihood.state_dict()
+        torch.save({'model': state_dict, 'likelihood': likelihood_state_dict}, save_path)
+        return 0
+
     # Load a pretrained model.
     def load(self, load_path):
         """
@@ -172,13 +182,6 @@ class DGPXRL(object):
         self.likelihood.load_state_dict(likelihood_dict)
         return self.model, self.likelihood
 
-    def save(self, save_path):
-        state_dict = self.model.state_dict()
-        likelihood_state_dict = self.likelihood.state_dict()
-        torch.save({'model': state_dict, 'likelihood': likelihood_state_dict}, save_path + '/checkpoint.data')
-        return 0
-
-    # train function.
     def train(self, save_path=None, likelihood_sample_size=8):
 
         # specify the mode of the modules in the model; some modules may have different behaviors under training and eval
@@ -193,16 +196,16 @@ class DGPXRL(object):
             with gpytorch.settings.use_toeplitz(False):
                 minibatch_iter = tqdm.tqdm(self.train_loader, desc=f"(Epoch {epoch}) Minibatch")
                 with gpytorch.settings.num_likelihood_samples(likelihood_sample_size):
-                    for data, target in minibatch_iter:
+                    for obs, acts, rewards in minibatch_iter:
                         if torch.cuda.is_available():
-                            data, target = data.cuda(), target.cuda()
+                            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
                         if self.using_ngd:
                             self.variational_ngd_optimizer.zero_grad()
                             self.hyperparameter_optimizer.zero_grad()
                         else:
                             self.optimizer.zero_grad()
-                        output = self.model(data)  # marginal variational posterior, q(f|x).
-                        loss = -self.mll(output, target)  # approximated ELBO.
+                        output = self.model(obs, acts)  # marginal variational posterior, q(f|x).
+                        loss = -self.mll(output, rewards)  # approximated ELBO.
                         loss.backward()
                         if self.using_ngd:
                             self.variational_ngd_optimizer.step()
@@ -210,21 +213,24 @@ class DGPXRL(object):
                         else:
                             self.optimizer.step()
 
+                        output = self.likelihood(output)  # This gives us 8 samples from the predictive distribution (q(y|f_*)).
                         if self.likelihood_type == 'classification':
-                            _, preds = torch.max(preds, 1)
-                            correct += preds.eq(target.view_as(preds)).cpu().sum()
+                            pred = output.probs.mean(0).argmax(-1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
+                            correct += pred.eq(rewards.view_as(pred)).cpu().sum()
                         else:
-                            mae += torch.sum(torch.abs(preds - target))
-                            mse += torch.sum(torch.square(preds - target))
+                            preds = output.mean
+                            mae += torch.sum(torch.abs(preds - rewards))
+                            mse += torch.sum(torch.square(preds - rewards))
+
                         minibatch_iter.set_postfix(loss=loss.item())
 
                     if self.likelihood_type == 'classification':
-                        print('Test set: Accuracy: {}/{} ({}%)'.format(
+                        print('Train set: Accuracy: {}/{} ({}%)'.format(
                             correct, len(self.train_loader.dataset), 100. * correct / float(len(self.train_loader.dataset))
                         ))
                     else:
-                        print('Test MAE: {}'.format(mae / float(len(self.train_loader.dataset))))
-                        print('Test MSE: {}'.format(mse / float(len(self.train_loader.dataset))))
+                        print('Train MAE: {}'.format(mae / float(len(self.train_loader.dataset))))
+                        print('Train MSE: {}'.format(mse / float(len(self.train_loader.dataset))))
 
             self.scheduler.step()
 
@@ -242,18 +248,18 @@ class DGPXRL(object):
         mse = 0
         mae = 0
         with torch.no_grad(), gpytorch.settings.num_likelihood_samples(likelihood_sample_size):
-            for data, target in test_loader:
+            for obs, acts, rewards in test_loader:
                 if torch.cuda.is_available():
-                    data, target = data.cuda(), target.cuda()
-                f_predicted = self.model(data)
+                    obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+                f_predicted = self.model(obs, acts)
                 output = self.likelihood(f_predicted)  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
                 if self.likelihood_type == 'classification':
                     pred = output.probs.mean(0).argmax(-1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
-                    correct += pred.eq(target.view_as(pred)).cpu().sum()
+                    correct += pred.eq(rewards.view_as(pred)).cpu().sum()
                 else:
                     preds = output.mean
-                    mae += torch.sum(torch.abs(preds - target))
-                    mse += torch.sum(torch.square(preds - target))
+                    mae += torch.sum(torch.abs(preds - rewards))
+                    mse += torch.sum(torch.square(preds - rewards))
             if self.likelihood_type == 'classification':
                 print('Test set: Accuracy: {}/{} ({}%)'.format(
                     correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
@@ -262,46 +268,42 @@ class DGPXRL(object):
                 print('Test MAE: {}'.format(mae/float(len(test_loader.dataset))))
                 print('Test MSE: {}'.format(mse/float(len(test_loader.dataset))))
 
-    def get_explanations(self, data, normalize=True):
+    def get_explanations(self, obs, acts, rewards, normalize=True):
+        """
+        :param obs: input observations.
+        :param acts: input actions.
+        :param rewards: trajectory rewards.
+        :return: time step importance.
+        """
+
         self.model.eval()
         self.likelihood.eval()
 
-        if len(data.shape) == 2:
-            data = data[None,:,:]
+        if torch.cuda.is_available():
+            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+
         importance = self.likelihood.mixing_weights
-        step_embedding, traj_embedding = self.model.encoder(data)  # (N, T, P) -> (N, T, D), (N, D).
-        traj_embedding = traj_embedding[:, None, :].repeat(1, data.shape[1], 1)  # (N, D) -> (N, T, D)
+        step_embedding, traj_embedding = self.model.encoder(obs, acts)  # (N, T, P) -> (N, T, D), (N, D).
+        traj_embedding = traj_embedding[:, None, :].repeat(1, obs.shape[1], 1)  # (N, D) -> (N, T, D)
         features = torch.cat([step_embedding, traj_embedding], dim=-1)  # (N, T, 2D)
-        features = features.view(data.size(0) * data.size(1), features.size(-1))
+        features = features.view(obs.size(0) * obs.size(1), features.size(-1))
         covar_all = self.model.gp_layer.covar_module(features)
-        covar_step = self.model.gp_layer.ste_kernel(features)
+        covar_step = self.model.gp_layer.step_kernel(features)
         covar_traj = self.model.gp_layer.traj_kernel(features)
         # TODO: combine importance weight with covariance structure.
-        importance += importance[:, None] / importance.shape[1]
+        importance = importance.detach().numpy()
+        if len(importance.shape) == 2:
+            importance = importance.transpose()
+            importance = np.repeat(importance[None, ...], rewards.shape[0], axis=0)
+            if importance.shape[-1] > 1:
+                importance = importance[list(range(rewards.shape[0])), :, rewards]
+            else:
+                importance = np.squeeze(importance, -1)
         if normalize:
-            importance = (importance - np.min(importance, axis=1)[:, None])
-            importance = importance / (np.max(importance, axis=1)[:, None] - np.min(importance, axis=1)[:, None])
+            importance = (importance - np.min(importance, axis=1)[:, None]) \
+                         / (np.max(importance, axis=1)[:, None] - np.min(importance, axis=1)[:, None])
 
-        return importance, (covar_all, covar_traj, covar_step)
-
-
-# if __name__ == '__main__':
-#     explainer = DGPXRL(train_loader=train_loader, seq_len=train_x.size(1), input_dim=train_x.size(2), hiddens=HIDDENS,
-#                        likelihood_type=LIKELIHOOD_TYPE, lr=LR, optimizer_type=OPTIMIZER, n_epoch=N_EPOCHS, gamma=GAMMA,
-#                        dropout_rate=DROPOUT_RATE, num_inducing_points=NUM_INDUCING_POINTS)
-#
-#     if LOAD_PATH:
-#         explainer.load(LOAD_PATH)
-#
-#     explainer.train(save_path=SAVE_PATH)
-#     explainer.test(test_loader)
-#
-#     # Get the explanations and covariance.
-#     importance, covariance = explainer.get_explanations(data=train_x)
-#
-#     VisualizeCovar(covariance[0], SAVE_PATH+'/full_covar.pdf')
-#     VisualizeCovar(covariance[1], SAVE_PATH+'/traj_covar.pdf')
-#     VisualizeCovar(covariance[2], SAVE_PATH+'/step_covar.pdf')
+        return importance, (covar_all.numpy(), covar_traj.numpy(), covar_step.numpy())
 
 
 # All the keys in the state_dict.

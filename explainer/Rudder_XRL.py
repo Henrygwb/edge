@@ -9,7 +9,7 @@ import tqdm
 import torch
 import numpy as np
 import torch.optim as optim
-from .rnn_utils import CnnRnnEncoder, MlPRnnEncoder
+from .rnn_utils import CnnRnnEncoder, MlpRnnEncoder
 
 
 # Baseline 1 [RUDDER]: Vanilla RNN + Input mask.
@@ -36,7 +36,7 @@ class Rudder(object):
                                        n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                        normalize=normalize)
         else:
-            self.model = MlPRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
+            self.model = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
         self.fc_out = torch.nn.Sequential(
             torch.nn.Linear(hiddens[-1], 1),
             torch.nn.Flatten())

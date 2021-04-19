@@ -13,7 +13,7 @@ class CnnRnnEncoder(nn.Module):
     def __init__(self, seq_len, input_dim, input_channles, hidden_dim, n_action, embed_dim=16, rnn_cell_type='GRU',
                  use_input_attention=False, normalize=False):
         """
-        RNN structure (MLP+seq2seq) (\theta_1: RNN parameters).
+        RNN structure (CNN+seq2seq) (\theta_1: RNN parameters).
         :param seq_len: trajectory length.
         :param input_dim: the dimensionality of the input (Concatenate of observation and action).
         :param input_channles: 1.
@@ -81,7 +81,7 @@ class CnnRnnEncoder(nn.Module):
     def forward(self, x, y, h0=None, c0=None):
         # forward function: given an input, return the model output (output at each time and the final time step).
         """
-        :param x: input observations (Batch_size, seq_len, input_dim).
+        :param x: input observations (Batch_size, seq_len, 1, input_dim, input_dim).
         :param y: input actions (Batch_size, seq_len).
         :param h0: Initial hidden state at time t_0 (Batch_size, 1, hidden_dim).
         :param c0: Initial cell state at time t_0 (Batch_size, 1, hidden_dim).
@@ -108,7 +108,7 @@ class CnnRnnEncoder(nn.Module):
         return step_embed
 
 
-class MlPRnnEncoder(nn.Module):
+class MlpRnnEncoder(nn.Module):
     def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU',
                  use_input_attention=False, normalize=False):
         """
@@ -121,7 +121,7 @@ class MlPRnnEncoder(nn.Module):
         :param use_input_attention: Whether to use the input cell attention.
         :param normalize: whether to normalize the inputs.
         """
-        super(MlPRnnEncoder, self).__init__()
+        super(MlpRnnEncoder, self).__init__()
         self.normalize = normalize
         self.seq_len = seq_len
         self.input_dim = input_dim + 1
@@ -175,12 +175,12 @@ class MlPRnnEncoder(nn.Module):
         x = torch.cat((x, y[..., None]), -1)
         mlp_encoded = self.mlp_encoder(x)  # (N, T, Hiddens[-2]) get the hidden representation of every time step.
         if self.rnn_cell_type == 'GRU':
-            step_embed, _ = self.rnn(cnn_encoded, h0)
+            step_embed, _ = self.rnn(mlp_encoded, h0)
         else:
             if h0 is None or c0 is None:
-                step_embed, _ = self.rnn(cnn_encoded, None)
+                step_embed, _ = self.rnn(mlp_encoded, None)
             else:
-                step_embed, _ = self.rnn(cnn_encoded, (h0, c0))
+                step_embed, _ = self.rnn(mlp_encoded, (h0, c0))
         return step_embed
 
 
@@ -416,7 +416,7 @@ class RationaleNetGenerator(nn.Module):
                                          n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                          normalize=normalize)
         else:
-            self.encoder = MlPRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
+            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
 
         self.z_dim = 2
         self.hidden = nn.Linear(hiddens[-1], self.z_dim)
@@ -493,7 +493,7 @@ class RationaleNetEncoder(nn.Module):
                                        n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                        normalize=normalize)
         else:
-            self.encoder = MlPRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
+            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
 
         if torch.cuda.is_available():
             self.cuda = True

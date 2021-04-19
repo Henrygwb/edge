@@ -21,7 +21,96 @@ from gpytorch.lazy import DiagLazyTensor, MatmulLazyTensor, RootLazyTensor, SumL
 
 
 # Build the RNN model.
-class RNNEncoder(nn.Module):
+class CnnRnnEncoder(nn.Module):
+    def __init__(self, seq_len, input_dim, input_channles, hidden_dim, n_action, embed_dim=16,
+                 rnn_cell_type='GRU', normalize=False):
+        """
+        RNN structure (CNN+seq2seq) (\theta_1: RNN parameters).
+        :param seq_len: trajectory length.
+        :param input_dim: the dimensionality of the input (Concatenate of observation and action)
+        :param input_channles: 1.
+        :param hidden_dim: RNN output dim.
+        :param n_action: total number of actions.
+        :param embed_dim: action embedding dim.
+        :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
+        :param normalize: whether to normalize the inputs.
+        """
+        super(CnnRnnEncoder, self).__init__()
+        self.normalize = normalize
+        self.seq_len = seq_len
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.rnn_cell_type = rnn_cell_type
+
+        self.act_embedding = nn.Embedding(n_action, embed_dim)
+
+        self.encoder = nn.Sequential()
+
+        self.encoder.add_module('cnn_%d' % 1, nn.Conv2d(input_channles, 32, kernel_size=(3, 3), stride=(2, 2)))
+        self.encoder.add_module('relu_%d' % 1, nn.ReLU())
+
+        self.encoder.add_module('cnn_%d' % 2, nn.Conv2d(32, 32, kernel_size=(3, 3), stride=(2, 2)))
+        self.encoder.add_module('relu_%d' % 2, nn.ReLU())
+
+        self.encoder.add_module('cnn_%d' % 3, nn.Conv2d(32, 32, kernel_size=(3, 3), stride=(2, 2)))
+        self.encoder.add_module('relu_%d' % 3, nn.ReLU())
+
+        self.encoder.add_module('cnn_%d' % 4, nn.Conv2d(32, 16, kernel_size=(3, 3), stride=(2, 2)))
+        self.encoder.add_module('relu_%d' % 4, nn.ReLU())
+
+        self.encoder.add_module('flatten', nn.Flatten(start_dim=-3, end_dim=-1))
+
+        if input_dim == 80 or 84:
+            self.cnn_out_dim = 4 * 4 * 16 + embed_dim
+        else:
+            raise ValueError ('input dim does not support.')
+
+        if self.rnn_cell_type == 'GRU':
+            print('Using GRU as the recurrent layer.')
+            self.rnn = nn.GRU(input_size=self.cnn_out_dim, hidden_size=hidden_dim, batch_first=True)
+        elif self.rnn_cell_type == 'LSTM':
+            print('Using LSTM as the recurrent layer.')
+            self.rnn = nn.LSTM(input_size=self.cnn_out_dim, hidden_size=hidden_dim, batch_first=True)
+        else:
+            print('Using the default recurrent layer: GRU.')
+            self.rnn = nn.GRU(input_size=self.cnn_out_dim, hidden_size=hidden_dim, batch_first=True)
+            self.rnn_cell_type = 'GRU'
+
+        self.traj_embed_layer = nn.Linear(hidden_dim, hidden_dim)
+
+    def forward(self, x, y, h0=None, c0=None):
+        # forward function: given an input, return the model output (output at each time and the final time step).
+        """
+        :param x: input observations (Batch_size, seq_len, 1, input_dim, input_dim).
+        :param y: input actions (Batch_size, seq_len).
+        :param c0: Initial cell state at time t_0 (Batch_size, 1, hidden_dim).
+        :return step_embed: the latent representation of each time step (batch_size, seq_len, hidden_dim).
+        :return traj_embed: the latend representation of each trajectory (batch_size, hidden_dim).
+        """
+        num_traj = x.size(0)
+
+        if self.normalize:
+            mean = torch.mean(x, dim=(0, 1))[None, None, :]
+            std = torch.std(x, dim=(0, 1))[None, None, :]
+            x = (x - mean)/std
+        x = x.view(-1, 1, self.input_dim, self.input_dim)
+        obs_encoded = self.encoder(x)  # (N, T, D1) get the hidden representation of every time step.
+        obs_encoded = obs_encoded.view(num_traj, self.seq_len, obs_encoded.size(-1))
+        act_encoded = self.act_embedding(y)
+        cnn_encoded = torch.cat((obs_encoded, act_encoded), -1)
+        if self.rnn_cell_type == 'GRU':
+            step_embed, traj_embed = self.rnn(cnn_encoded, h0)
+        else:
+            if h0 is None or c0 is None:
+                step_embed, traj_embed = self.rnn(cnn_encoded, None)
+            else:
+                step_embed, traj_embed = self.rnn(cnn_encoded, (h0, c0))
+        traj_embed = torch.squeeze(traj_embed, 0) # (1, batch_size, hidden_dim) -> (batch_size, hidden_dim)
+        traj_embed = self.traj_embed_layer(traj_embed) # (batch_size, hidden_dim)
+        return step_embed, traj_embed
+
+
+class MlpRnnEncoder(nn.Module):
     def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
         """
         RNN structure (MLP+seq2seq) (\theta_1: RNN parameters).
@@ -32,20 +121,20 @@ class RNNEncoder(nn.Module):
         :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
         :param normalize: whether to normalize the inputs.
         """
-        super(RNNEncoder, self).__init__()
+        super(MlpRnnEncoder, self).__init__()
         self.normalize = normalize
         self.seq_len = seq_len
         self.input_dim = input_dim
         self.hidden_dim = hiddens[-1]
         self.rnn_cell_type = rnn_cell_type
-        self.mlp_encoder = nn.Sequential()
+        self.encoder = nn.Sequential()
         for i in range(len(hiddens)-1):
             if i == 0:
-                self.mlp_encoder.add_module('mlp_%d' % i, nn.Linear(input_dim, hiddens[i]))
+                self.encoder.add_module('mlp_%d' % i, nn.Linear(input_dim, hiddens[i]))
             else:
-                self.mlp_encoder.add_module('mlp_%d' % i, nn.Linear(hiddens[i-1], hiddens[i]))
-            self.mlp_encoder.add_module('relu_%d' % i, nn.ReLU())
-            self.mlp_encoder.add_module('dropout_%d' % i, nn.Dropout(dropout_rate))
+                self.encoder.add_module('mlp_%d' % i, nn.Linear(hiddens[i-1], hiddens[i]))
+            self.encoder.add_module('relu_%d' % i, nn.ReLU())
+            self.encoder.add_module('dropout_%d' % i, nn.Dropout(dropout_rate))
 
         if self.rnn_cell_type == 'GRU':
             print('Using GRU as the recurrent layer.')
@@ -60,10 +149,11 @@ class RNNEncoder(nn.Module):
 
         self.traj_embed_layer = nn.Linear(hiddens[-1], hiddens[-1])
 
-    def forward(self, x, h0=None, c0=None):
+    def forward(self, x, y, h0=None, c0=None):
         # forward function: given an input, return the model output (output at each time and the final time step).
         """
-        :param x: input trajectories (Batch_size, seq_len, input_dim).
+        :param x: input observations (Batch_size, seq_len, input_dim).
+        :param y: input actions (Batch_size, seq_len).
         :param h0: Initial hidden state at time t_0 (Batch_size, 1, hidden_dim).
         :param c0: Initial cell state at time t_0 (Batch_size, 1, hidden_dim).
         :return step_embed: the latent representation of each time step (batch_size, seq_len, hidden_dim).
@@ -73,7 +163,8 @@ class RNNEncoder(nn.Module):
             mean = torch.mean(x, dim=(0, 1))[None, None, :]
             std = torch.std(x, dim=(0, 1))[None, None, :]
             x = (x - mean)/std
-        mlp_encoded = self.mlp_encoder(x) # (N, T, Hiddens[-2]) get the hidden representation of every time step.
+        x = torch.cat((x, y[..., None]), -1)
+        mlp_encoded = self.encoder(x) # (N, T, Hiddens[-2]) get the hidden representation of every time step.
         if self.rnn_cell_type == 'GRU':
             step_embed, traj_embed = self.rnn(mlp_encoded, h0)
         else:
@@ -176,16 +267,20 @@ class GaussianProcessLayer(gpytorch.models.ApproximateGP):
 
 # Build the full model.
 class DGPXRLModel(gpytorch.Module):
-    def __init__(self, seq_len, input_dim, hiddens, likelihood_type, num_inducing_points, inducing_points=None,
-                 mean_inducing_points=None, dropout_rate=0.25, rnn_cell_type='GRU', normalize=False, grid_bounds=None,
-                 using_ngd=False, using_ksi=False, using_ciq=False, using_sor=False, using_OrthogonallyDecouple=False):
+    def __init__(self, seq_len, input_dim, hiddens, likelihood_type, n_action,  num_inducing_points, embed_dim=16,
+                 encoder_type='MLP', inducing_points=None, mean_inducing_points=None, dropout_rate=0.25,
+                 rnn_cell_type='GRU', normalize=False, grid_bounds=None, using_ngd=False, using_ksi=False,
+                 using_ciq=False, using_sor=False, using_OrthogonallyDecouple=False):
         """
         Define the full model.
         :param seq_len: trajectory length.
         :param input_dim: input state/action dimension.
         :param hiddens: hidden layer dimentions.
         :param likelihood_type: likelihood type.
+        :param n_action: number of actions.
         :param num_inducing_points: number of inducing points.
+        :param embed_dim: actions embedding dim.
+        :param encoder_type: encoder type ('MLP' or 'CNN').
         :param inducing_points: inducing points at the latent space Z (num_inducing_points, 2*hiddens[-1]).
         :param mean_inducing_points: mean inducing points, used for orthogonally decoupled VGP.
         :param dropout_rate: MLP dropout rate.
@@ -200,7 +295,15 @@ class DGPXRLModel(gpytorch.Module):
         """
         super().__init__()
         self.seq_len = seq_len
-        self.encoder = RNNEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize)
+        self.encoder_type = encoder_type
+
+        if self.encoder_type == 'CNN':
+            self.encoder = CnnRnnEncoder(seq_len, input_dim, input_channles=1, hidden_dim=hiddens[-1],
+                                       n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
+                                       normalize=normalize)
+        else:
+            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
+
         if inducing_points is None:
             inducing_points = torch.randn(num_inducing_points, 2*hiddens[-1])
         if mean_inducing_points is None:
@@ -213,14 +316,15 @@ class DGPXRLModel(gpytorch.Module):
                                              using_ciq=using_ciq, using_sor=using_sor,
                                              using_OrthogonallyDecouple=using_OrthogonallyDecouple)
 
-    def forward(self, x):
+    def forward(self, x, y):
         """
         Compute the marginal posterior q(f) ~ N(\mu_f, \sigma_f), \mu_f (N*T, 1), \sigma_f(N*T, N*T).
         Later, when computing the marginal loglikelihood, we sample multiple set of data from the marginal loglikelihood.
         :param x: input data x (N, T, P).
+        :param x: input data y (N, T).
         :return: q(gy_layer(Encoder(x))).
         """
-        step_embedding, traj_embedding = self.encoder(x)  # (N, T, P) -> (N, T, D), (N, D).
+        step_embedding, traj_embedding = self.encoder(x, y)  # (N, T, P) -> (N, T, D), (N, D).
         traj_embedding = traj_embedding[:, None, :].repeat(1, self.seq_len, 1) # (N, D) -> (N, T, D)
         features = torch.cat([step_embedding, traj_embedding], dim=-1) # (N, T, 2D)
         features = features.view(x.size(0)*x.size(1), features.size(-1))
@@ -800,8 +904,7 @@ def VisualizeCovar(covariance, save_path):
         xticklabels=False,
         yticklabels=False,
     )
-    plt.show()
     if save_path[-3:] != 'pdf':
-        raise TypeError('Output format shoud be pdf.')
-    heat.savefig(save_path, bbox_inches='tight')
+        raise TypeError('Output format should be pdf.')
+    plt.savefig(save_path, bbox_inches='tight')
     return 0

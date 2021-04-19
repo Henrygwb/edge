@@ -2,24 +2,19 @@ import torch
 import numpy as np
 import gym, os, sys, argparse
 from scipy.misc import imresize
-# from explainer.DGP_XRL import DGPXRL
+from explainer.DGP_XRL import DGPXRL
 from explainer.Rudder_XRL import Rudder
 from explainer.RnnAttn_XRL import RnnAttn
+from explainer.gp_utils import VisualizeCovar
+from atari_pong.utils import NNPolicy, rollout
 from explainer.RnnSaliency_XRL import RnnSaliency
 from explainer.RationaleNet_XRL import RationaleNet
-from atari_pong.utils import NNPolicy, rollout
 sys.path.append('..')
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--explainer", type=str, default='rationale')
+parser.add_argument("--explainer", type=str, default='dgp')
 
 args = parser.parse_args()
-
-hiddens = [4]
-encoder_type = 'CNN'
-rnn_cell_type = 'GRU'
-n_epoch = 2
-save_path = 'exp_model_results/'
 
 
 def obs_resize(obs):
@@ -90,6 +85,12 @@ test_set = torch.utils.data.TensorDataset(obs[train_size:, ...], acts[train_size
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=4, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=2, shuffle=False)
 
+hiddens = [4]
+encoder_type = 'CNN'
+rnn_cell_type = 'GRU'
+n_epoch = 2
+save_path = 'exp_model_results/'
+
 if args.explainer == 'value':
     # Explainer 1 - Value function.
     sal_value = (values - np.min(values, axis=1)[:, None]) / \
@@ -100,20 +101,26 @@ elif args.explainer == 'rudder':
     # Explainer 2 - Rudder.
     rudder_explainer = Rudder(seq_len=seq_len, input_dim=input_dim, hiddens=hiddens, n_action=n_action,
                               encoder_type=encoder_type)
-    rudder_explainer.train(train_loader, n_epoch, save_path=save_path+'rudder_model.data')
+    name = 'rudder_' + encoder_type + '_' + rnn_cell_type
+    rudder_explainer.train(train_loader, n_epoch, save_path=save_path+name+'_model.data')
     rudder_explainer.test(test_loader)
-    rudder_explainer.load(save_path+'rudder_model.data')
+    rudder_explainer.load(save_path+name+'_model.data')
     rudder_explainer.test(test_loader)
     sal_rudder = rudder_explainer.get_explanations(obs, acts, final_rewards)
-    np.savez_compressed(save_path+'rudder_exp.npz', sal=sal_rudder)
+    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rudder)
 
 elif args.explainer == 'saliency':
     # Explainer 3 - RNN + Saliency.
-    saliency_explainer = RnnSaliency(seq_len, input_dim, 'classification', hiddens, n_action, encoder_type=encoder_type,
-                                     num_class=2, rnn_cell_type='GRU', use_input_attention=True, normalize=False)
-    saliency_explainer.train(train_loader, n_epoch, save_path=save_path+'saliency_model.data')
+    likelihood_type = 'classification'
+    use_input_attention = True
+    saliency_explainer = RnnSaliency(seq_len, input_dim, likelihood_type, hiddens, n_action, encoder_type=encoder_type,
+                                     num_class=2, rnn_cell_type=rnn_cell_type, use_input_attention=use_input_attention,
+                                     normalize=False)
+    name = 'saliency_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + str(use_input_attention)
+
+    saliency_explainer.train(train_loader, n_epoch, save_path=save_path+name+'_model.data')
     saliency_explainer.test(test_loader)
-    saliency_explainer.load(save_path+'saliency_model.data')
+    saliency_explainer.load(save_path+name+'_model.data')
     saliency_explainer.test(test_loader)
     for back2rnn in [False, True]:
         sal_g = saliency_explainer.get_explanations(obs, acts, final_rewards, saliency_method='gradient',
@@ -129,41 +136,76 @@ elif args.explainer == 'saliency':
         sal_sg_var = saliency_explainer.get_explanations(obs, acts, final_rewards, saliency_method='vargrad',
                                                          back2rnn=back2rnn)
         if back2rnn:
-            np.savez_compressed(save_path+'saliency_exp_rnn_layer.npz', sal_g=sal_g, sal_ig=sal_ig,
+            np.savez_compressed(save_path+name+'_exp_rnn_layer.npz', sal_g=sal_g, sal_ig=sal_ig,
                                 sal_ig_unified=sal_ig_unified, sal_sg=sal_sg, sal_sg_exp=sal_sg_exp,
                                 sal_sg_var=sal_sg_var)
         else:
-            np.savez_compressed(save_path+'saliency_exp_input_layer.npz', sal_g=sal_g, sal_ig=sal_ig,
+            np.savez_compressed(save_path+name+'_exp_input_layer.npz', sal_g=sal_g, sal_ig=sal_ig,
                                 sal_ig_unified=sal_ig_unified, sal_sg=sal_sg, sal_sg_exp=sal_sg_exp,
                                 sal_sg_var=sal_sg_var)
 
 elif args.explainer == 'attention':
     # Explainer 4 - AttnRNN.
-    attention_explainer = RnnAttn(seq_len, input_dim, 'classification', hiddens, n_action, encoder_type=encoder_type,
-                                  num_class=2, attention_type='tanh', normalize=False)
-    attention_explainer.train(train_loader, n_epoch, save_path=save_path+'attention_model.data')
+    likelihood_type = 'classification'
+    attention_type = 'tanh'
+    name = 'attention_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + attention_type
+
+    attention_explainer = RnnAttn(seq_len, input_dim, likelihood_type, hiddens, n_action, encoder_type=encoder_type,
+                                  num_class=2, attention_type=attention_type, normalize=False)
+
+    attention_explainer.train(train_loader, n_epoch, save_path=save_path+name+'_model.data')
     attention_explainer.test(test_loader)
-    attention_explainer.load(save_path+'attention_model.data')
+    attention_explainer.load(save_path+name+'_model.data')
     attention_explainer.test(test_loader)
     sal_attention = attention_explainer.get_explanations(obs, acts, final_rewards)
-    np.savez_compressed(save_path+'attention_exp.npz', sal=sal_attention)
+    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_attention)
 
 elif args.explainer == 'rationale':
     # Explainer 5 - RationaleNet.
-    rationale_explainer = RationaleNet(seq_len, input_dim, 'regression', hiddens, n_action, encoder_type=encoder_type,
+    likelihood_type = 'classification'
+    name = 'rationale_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type
+
+    rationale_explainer = RationaleNet(seq_len, input_dim, likelihood_type, hiddens, n_action, encoder_type=encoder_type,
                                        num_class=2, normalize=False)
-    rationale_explainer.train(train_loader, n_epoch, save_path=save_path+'rationale_model.data')
+    rationale_explainer.train(train_loader, n_epoch, save_path=save_path+name+'_model.data')
     rationale_explainer.test(test_loader)
-    rationale_explainer.load(save_path+'rationale_model.data')
+    rationale_explainer.load(save_path+name+'_model.data')
     rationale_explainer.test(test_loader)
     sal_rationale = rationale_explainer.get_explanations(obs, acts, final_rewards)
-    np.savez_compressed(save_path+'rationale_exp.npz', sal=sal_rationale)
+    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rationale)
 
-# Explainer 6 - DGP.
+elif args.explainer == 'dgp':
+    # Explainer 6 - DGP.
+    likelihood_type = 'regression'
+    rnn_cell_type = 'GRU'
+    optimizer = 'adam'
+    num_inducing_points = 20
+    using_ngd = True # Whether to use natural gradient descent.
+    using_ksi = False # Whether to use KSI approximation, using this with other options as False.
+    using_ciq = True # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
+    using_sor = False # Whether to use SoR approximation, not applicable for KSI and CIQ.
+    using_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
+    grid_bound = [(-3, 3)] * hiddens[-1] * 2
 
+    dgp_explainer = DGPXRL(train_loader=train_loader, seq_len=seq_len, input_dim=input_dim, hiddens=hiddens,
+                           likelihood_type=likelihood_type, lr=0.01, optimizer_type=optimizer, n_epoch=n_epoch,
+                           gamma=0.1, num_inducing_points=num_inducing_points, n_action=n_action, grid_bounds=grid_bound,
+                           encoder_type=encoder_type, inducing_points=None, mean_inducing_points=None,
+                           num_class=num_class, rnn_cell_type=rnn_cell_type, using_ngd=using_ngd, using_ksi=using_ksi,
+                           using_ciq=using_ciq, using_sor=using_sor, using_OrthogonallyDecouple=using_OrthogonallyDecouple)
+    name = 'dgp_' + likelihood_type + '_' + rnn_cell_type + '_' + \
+           str(num_inducing_points)+'_'+ str(using_ngd) + '_' + str(using_ngd) + '_' \
+           + str(using_ksi) + '_' + str(using_ciq) + '_' + str(using_sor) + '_' \
+           + str(using_OrthogonallyDecouple)
+    dgp_explainer.train(save_path+name+'_model.data')
+    dgp_explainer.test(test_loader)
+    dgp_explainer.load(save_path+name+'_model.data')
+    dgp_explainer.test(test_loader)
+    sal_rationale, covariance = dgp_explainer.get_explanations(obs, acts, final_rewards)
+    # np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rationale, full_covar=covariance[0], traj_cova=covariance[1],
+    #                     step_covar=covariance[2])
 
-
-
-
-
+    # VisualizeCovar(covariance[0], save_path+name+'_dgp_full_covar.pdf')
+    # VisualizeCovar(covariance[1], save_path+name+'_dgp_traj_covar.pdf')
+    # VisualizeCovar(covariance[2], save_path+name+'_dgp_step_covar.pdf')
 
