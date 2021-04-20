@@ -203,7 +203,10 @@ class DGPXRL(object):
         self.model.train()
         self.likelihood.train()
 
-        n_batch = int(train_idx.shape[0] / batch_size) + 1
+        if train_idx.shape[0] % batch_size == 0:
+            n_batch = int(train_idx.shape[0] / batch_size)
+        else:
+            n_batch = int(train_idx.shape[0] / batch_size) + 1
         for _ in tqdm.tqdm(range(1, self.n_epoch + 1)):
             mse = 0
             mae = 0
