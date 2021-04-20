@@ -471,10 +471,12 @@ class RnnAttn(object):
         saliency, _ = self.attention(output)
         saliency = saliency.squeeze(-1)
         saliency = saliency.cpu().detach().numpy()
+         
+        
         if normalize:
             saliency = (saliency - np.min(saliency, axis=1)[:, None]) / \
                        (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
-
+            saliency[np.where(np.isnan(saliency))] = 1.0
         return saliency
 
     def exp_fid_stab(self, exp_idx, batch_size, traj_path, n_stab_samples=5):

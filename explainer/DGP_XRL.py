@@ -292,13 +292,16 @@ class DGPXRL(object):
         :param rewards: trajectory rewards.
         :return: predicted outputs.
         """
-
+        if torch.cuda.is_available():
+            self.model = self.model.cuda()
+            self.likelihood = self.likelihood.cuda()
+ 
         self.model.eval()
         self.likelihood.eval()
 
         if torch.cuda.is_available():
-            obs, acts = obs.cuda(), acts.cuda()
-
+            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+        
         f_predicted = self.model(obs, acts)
         output = self.likelihood(f_predicted)  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
 
@@ -565,7 +568,10 @@ class DGPXRL(object):
         :param rewards: trajectory rewards.
         :return: time step importance.
         """
-
+        if torch.cuda.is_available():
+            self.model = self.model.cuda()
+            self.likelihood = self.likelihood.cuda()
+ 
         self.model.eval()
         self.likelihood.eval()
 

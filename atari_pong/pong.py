@@ -92,7 +92,7 @@ elif args.explainer == 'rudder':
     print('Std fid of the top 25 normalization: {}'.format(np.std(fid_all[2])))
 
     print('Mean fid of the top 50 normalization: {}'.format(np.mean(fid_all[3])))
-    print('Std fid of the top 50 normalization: {}'.format(np.std(fid_all[4])))
+    print('Std fid of the top 50 normalization: {}'.format(np.std(fid_all[3])))
 
     print('Mean stab: {}'.format(np.mean(stab_all)))
     print('Std stab: {}'.format(np.std(stab_all)))
@@ -127,6 +127,7 @@ elif args.explainer == 'saliency':
                 np.savez_compressed(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz',
                                     sal=sal_saliency_all, fid=fid_all, stab=stab_all, time=mean_time, acc=acc_all)
     best_method_idx = np.argmin(fid_all_methods)
+    print('Best_method: {}'.format(best_method_idx))
     if best_method_idx < 6:
         saliency_methond = all_methods[best_method_idx]
         sal_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['sal']
@@ -175,8 +176,8 @@ elif args.explainer == 'attention':
                                   encoder_type=encoder_type, num_class=2, attention_type=attention_type,
                                   normalize=False)
 
-    attention_explainer.train(train_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
-    attention_explainer.test(test_idx, batch_size, traj_path)
+    #attention_explainer.train(train_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
+    #attention_explainer.test(test_idx, batch_size, traj_path)
     attention_explainer.load(save_path+name+'_model.data')
     attention_explainer.test(test_idx, batch_size, traj_path)
 
