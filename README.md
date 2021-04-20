@@ -35,14 +35,19 @@ The `atari_pong` contains the explanation pipeline, pretrained agents, and the e
 - Step 2: set up the game env, load the pretrained agent, and collect trajectories by running the agent in the environment.
   - Note 1: Run and save the trajectories when collecting them at the first time and load the collected traj for future usages (make sure all the models are trained on the same set of trajectories).
   - Note 2: each trajectory means each game round (The agent fails/loses/dies and the game env restarts). Do not directly splitting the trajectories based on the `done` flag given by the game env. In some games, the agent may have multiple lives or the game runs multiple rounds before returning a `done`. Do a double check and set up the specific spltting flag for such games. 
-  - Note 3: Save the original observations rather than the preprocessed ones used as policy network inputs (For better visualization purpose). Conduct the same preprocess when training all the explanation models.
+  - Note 3: Save the original observations and the preprocessed ones used as policy network inputs (For better visualization purpose).
   - Note 4: the trajectories have varied lengthes, pad them into the same length: pad at the front, not the end; pad with a meaningless number (Be careful with 0, '-1' and '1', it will cause confusion for rewards and categorial actions).
   - Note 5: control the traj length with some parameter like `max_ep_len` and discard the trajs that do not finish at the maximum length.
-  - Note 6: the shape of the save items: 
-    - Observations: [n_traj, seq_len, input_channel, input_dim, input_dim] or [n_traj, seq_len, input_dim].
-    - Actions: [n_traj, seq_len] or [n_traj, seq_len, act_dim].
-    - Rewards: [n_traj, seq_len].
-    - Value function outputs: [n_traj, seq_len].
+  - Note 6: save every traj with a `.npz` file to prevent the out of memory issue: 
+  - Note 7: the shape of the save items: 
+    - Observations: [max_seq_len, input_channel, input_dim, input_dim] or [max_seq_len, input_dim].
+    - States (preprocessed observations): [max_seq_len, input_channel, input_dim, input_dim] or [max_seq_len, input_dim].
+    - Actions: [max_seq_len] or [max_seq_len, act_dim].
+    - Rewards: [max_seq_len].
+    - Value function outputs: [max_seq_len].
+    - Final reward: [1].
+    - max_ep_length: actual maximum traj length.
+    - traj_count: total number of collected trajs.
 - Step 3: load and preprocess the trajectories. 
   - Note 1: change the padded values in obs with `0` and preprocess them into states using the policy network preprocessing method.
   - Note 2: categorical actions: add the action values by `1` and change the padded value to `0`, and record the total number of actions as all the possible actions + 1 (`np.unique(acts)`).
