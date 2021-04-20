@@ -57,7 +57,10 @@ The `atari_pong` contains the explanation pipeline, pretrained agents, and the e
 - Step 4: record the value function outputs as the first baseline results.
 - Step 5: run the baselines mentioned above with a different choice of `--explainer`: 'rudder', 'saliency', 'attention', 'rationale', save the trained model and obtained explanations, and training/testing accuracy and runtimes. 
 - Step 6: run our method and save/record the same things.
-- Step 7: Fidelity testing.
+- Step 7: Quantitative evaluation.
+  - Approximation accuracy (precision, recall, f1).
   - Fidelity w.r.t. the explanation model.
   - Fidelity w.r.t. the RL task. 
+  - Sensitivity/stablity 
+  - Efficiency/runtime.
 
