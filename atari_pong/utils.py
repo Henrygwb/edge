@@ -40,12 +40,13 @@ class NNPolicy(torch.nn.Module): # an actor-critic neural network
         return step
 
 
-def rollout(model, env, num_traj, max_ep_len=1e3, render=False):
-    all_obs, all_acts, all_rewards, all_values = [], [], [], []
+def rollout(model, env, num_traj, max_ep_len=1e3, save_path=None, render=False):
+
     max_ep_length = 0
+    traj_count = 0
     for i in range(num_traj):
         print('Traj %d out of %d.' %(i, num_traj))
-        cur_obs, cur_acts, cur_rewards, cur_values = [], [], [], []
+        cur_obs, cur_states, cur_acts, cur_rewards, cur_values = [], [], [], [], []
         state = torch.tensor(prepro(env.reset()))  # get first state
         episode_length, epr, eploss, done = 0, 0, 0, False  # bookkeeping
         hx, cx = Variable(torch.zeros(1, 256)), Variable(torch.zeros(1, 256))
@@ -66,32 +67,63 @@ def rollout(model, env, num_traj, max_ep_len=1e3, render=False):
 
             # save info!
             cur_obs.append(obs)
+            cur_states.append(state.detach().numpy())
             cur_acts.append(action.numpy()[0])
             cur_rewards.append(reward)
             cur_values.append(value.detach().numpy()[0,0])
 
         print('step # {}, reward {:.0f}, action {:.0f}, value {:.4f}.'.format(episode_length, epr,
-                                                                               action.numpy()[0],
-                                                                               value.detach().numpy()[0,0]))
+                                                                              action.numpy()[0],
+                                                                              value.detach().numpy()[0,0]))
         if epr != 0:
-            all_obs.append(cur_obs)
-            all_acts.append(cur_acts)
-            all_rewards.append(cur_rewards)
-            all_values.append(cur_values)
             max_ep_length = max(len(cur_rewards), max_ep_length)
 
-    for all_arr in all_obs, all_acts, all_rewards, all_values:
-        for arr in all_arr:
-            padding_amt = max_ep_length - len(arr)
-            elem = arr[-1]
-            padding_elem = np.ones_like(elem) * -20
+            padding_amt = int(max_ep_len - len(cur_obs))
+
+            elem_obs = cur_obs[-1]
+            padding_elem_obs = np.zeros_like(elem_obs)
             for _ in range(padding_amt):
-                arr.insert(0, padding_elem)
+                cur_obs.insert(0, padding_elem_obs)
 
-    all_obs = np.array(all_obs)
-    all_acts = np.array(all_acts)
-    all_rewards = np.array(all_rewards)
-    all_values = np.array(all_values)
-    history = {'observations': all_obs, 'actions': all_acts, 'rewards': all_rewards, 'values': all_values}
+            elem_states = cur_states[-1]
+            padding_elem_states = np.zeros_like(elem_states)
+            for _ in range(padding_amt):
+                cur_states.insert(0, padding_elem_states)
 
-    return history
+            elem_acts = cur_acts[-1]
+            padding_elem_acts = np.ones_like(elem_acts) * -1
+            for _ in range(padding_amt):
+                cur_acts.insert(0, padding_elem_acts)
+
+            elem_rewards = cur_rewards[-1]
+            padding_elem_rewards = np.zeros_like(elem_rewards)
+            for _ in range(padding_amt):
+                cur_rewards.insert(0, padding_elem_rewards)
+
+            elem_values = cur_values[-1]
+            padding_elem_values = np.zeros_like(elem_values)
+            for _ in range(padding_amt):
+                cur_values.insert(0, padding_elem_values)
+
+            obs = np.array(cur_obs)
+            states = np.array(cur_states)
+            acts = np.array(cur_acts)
+            rewards = np.array(cur_rewards)
+            values = np.array(cur_values)
+
+            acts = acts + 1
+            final_rewards = rewards[-1].astype('int32')  # get the final reward of each traj.
+            if final_rewards == -1:
+                final_rewards = 0
+            elif final_rewards == 1:
+                final_rewards = 1
+            else:
+                final_rewards = 0
+                print('None support final_rewards')
+            print(final_rewards)
+            np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz', observations=obs,
+                                actions=acts, values=values, states=states, rewards=rewards, final_rewards=final_rewards)
+            traj_count += 1
+
+    np.save(save_path + '_max_length_.npy', max_ep_length)
+    np.save(save_path + '_num_traj_.npy', traj_count)

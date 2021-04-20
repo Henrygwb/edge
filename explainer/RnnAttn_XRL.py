@@ -10,16 +10,18 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from .rnn_utils import MlpRnnEncoder, CnnRnnEncoder, TanhAttention, DotAttention
 
 
 # Baseline 3. RNN with attention [Attention is not Explanation].
 class RnnAttn(object):
-    def __init__(self, seq_len, input_dim, likelihood_type, hiddens, n_action, num_class=0, embed_dim=16,
+    def __init__(self, seq_len, len_diff, input_dim, likelihood_type, hiddens, n_action=0, num_class=0, embed_dim=16,
                  encoder_type='MLP', attention_type='tanh', dropout_rate=0.25, rnn_cell_type='GRU',
                  use_input_attention=False, normalize=False):
         """
         :param seq_len: trajectory length.
+        :param len_diff: trajectory len_diff.
         :param input_dim: the dimensionality of the input (Concatenate of observation and action).
         :param likelihood_type: likelihood type.
         :param hiddens: hidden layer dimensions.
@@ -36,6 +38,8 @@ class RnnAttn(object):
         self.attention_type = attention_type
         self.likelihood_type = likelihood_type
         self.encoder_type = encoder_type
+        self.len_diff = len_diff
+        self.n_action = n_action
 
         if self.encoder_type == 'CNN':
             self.model = CnnRnnEncoder(seq_len, input_dim, input_channles=1, hidden_dim=hiddens[-1],
@@ -81,10 +85,13 @@ class RnnAttn(object):
         self.attention.load_state_dict(attention_dict)
         return self.model, self.likelihood, self.attention
 
-    def train(self, train_loader, n_epoch, lr=0.01, gamma=0.1, optimizer_choice='adam', save_path=None):
+    def train(self, train_idx, batch_size, n_epoch, traj_path, lr=0.01, gamma=0.1, optimizer_choice='adam',
+              save_path=None):
         """
-        :param train_loader: training data loader.
+        :param train_idx: training traj index.
+        :param batch_size: training batch size.
         :param n_epoch: number of training epoch.
+        :param traj_path: training traj path.
         :param lr: learning rate.
         :param gamma: learning rate decay rate.
         :param optimizer_choice: training optimizer, 'adam' or 'sgd'.
@@ -108,12 +115,33 @@ class RnnAttn(object):
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[0.5 * n_epoch, 0.75 * n_epoch],
                                                    gamma=gamma)
 
-        for epoch in range(1, n_epoch + 1):
-            minibatch_iter = tqdm.tqdm(train_loader, desc=f"(Epoch {epoch}) Minibatch")
+        n_batch = int(train_idx.shape[0] / batch_size) + 1
+        for _ in tqdm.tqdm(range(1, n_epoch + 1)):
             mse = 0
             mae = 0
-            correct = 0
-            for obs, acts, rewards in minibatch_iter:
+            loss_sum = 0
+            preds_all = []
+            rewards_all = []
+            for batch in range(n_batch):
+                batch_obs = []
+                batch_acts = []
+                batch_rewards = []
+                for idx in train_idx[batch * batch_size:min((batch + 1) * batch_size, train_idx.shape[0]), ]:
+                    batch_obs.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['states'])
+                    batch_acts.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['actions'])
+                    batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
+
+                obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+                if self.n_action == 0:
+                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+                else:
+                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+
+                if self.likelihood_type == 'classification':
+                    rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
+                else:
+                    rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
+
                 if torch.cuda.is_available():
                     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
                 optimizer.zero_grad()
@@ -130,30 +158,37 @@ class RnnAttn(object):
                 loss = loss_fn(output, rewards)
                 loss.backward()
                 optimizer.step()
+                loss_sum += loss.item()
                 if self.likelihood_type == 'classification':
                     _, preds = torch.max(output, 1)
-                    correct += preds.eq(rewards.view_as(preds)).cpu().sum()
+                    preds_all.extend(preds.cpu().detach().numpy().tolist())
+                    rewards_all.extend(rewards.cpu().detach().numpy().tolist())
                 else:
                     mae += torch.sum(torch.abs(output - rewards))
                     mse += torch.sum(torch.square(output - rewards))
-                minibatch_iter.set_postfix(loss=loss.item())
 
             if self.likelihood_type == 'classification':
-                print('Train set: Accuracy: {}/{} ({}%)'.format(
-                    correct, len(train_loader.dataset), 100. * correct / float(len(train_loader.dataset))
-                ))
+                preds_all = np.array(preds_all)
+                rewards_all = np.array(rewards_all)
+                precision, recall, f1, _ = precision_recall_fscore_support(rewards_all, preds_all)
+                acc = accuracy_score(rewards_all, preds_all)
+                for cls in range(len(precision)):
+                    print('Train results of class {}: Precision: {}, Recall: {}, F1: {}, Accuracy: {}.'.
+                          format(cls, precision[cls], recall[cls], f1[cls], acc))
             else:
-                print('Train MAE: {}'.format(mae / float(len(train_loader.dataset))))
-                print('Train MSE: {}'.format(mse / float(len(train_loader.dataset))))
+                print('Train MAE: {}'.format(mae / float(train_idx.shape[0])))
+                print('Train MSE: {}'.format(mse / float(train_idx.shape[0])))
             scheduler.step()
 
         if save_path:
             self.save(save_path)
         return self.model
 
-    def test(self, test_loader):
+    def test(self, test_idx, batch_size, traj_path):
         """
-        :param test_loader: testing data loader.
+        :param test_idx: training traj index.
+        :param batch_size: training batch size.
+        :param traj_path: training traj path.
         :return: prediction error.
         """
         self.model.eval()
@@ -162,8 +197,30 @@ class RnnAttn(object):
 
         mse = 0
         mae = 0
-        correct = 0
-        for obs, acts, rewards in test_loader:
+        preds_all = []
+        rewards_all = []
+
+        n_batch = int(test_idx.shape[0] / batch_size) + 1
+        for batch in range(n_batch):
+            batch_obs = []
+            batch_acts = []
+            batch_rewards = []
+            for idx in test_idx[batch * batch_size:min((batch + 1) * batch_size, test_idx.shape[0]), ]:
+                batch_obs.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['states'])
+                batch_acts.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['actions'])
+                batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
+
+            obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+            if self.n_action == 0:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+
+            if self.likelihood_type == 'classification':
+                rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
+            else:
+                rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
+
             if torch.cuda.is_available():
                 obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
             preds = self.model(obs, acts)
@@ -172,37 +229,74 @@ class RnnAttn(object):
 
             if self.likelihood_type == 'classification':
                 _, preds = torch.max(preds, 1)
-                correct += preds.eq(rewards.view_as(preds)).cpu().sum()
+                preds_all.extend(preds.cpu().detach().numpy().tolist())
+                rewards_all.extend(rewards.cpu().detach().numpy().tolist())
             else:
                 mae += torch.sum(torch.abs(preds - rewards))
                 mse += torch.sum(torch.square(preds - rewards))
 
         if self.likelihood_type == 'classification':
-            print('Test set: Accuracy: {}/{} ({}%)'.format(
-                correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
-            ))
-            return correct
-
+            preds_all = np.array(preds_all)
+            rewards_all = np.array(rewards_all)
+            precision, recall, f1, _ = precision_recall_fscore_support(rewards_all, preds_all)
+            acc = accuracy_score(rewards_all, preds_all)
+            for cls in range(len(precision)):
+                print('Test results of class {}: Precision: {}, Recall: {}, F1: {}, Accuracy: {}.'.
+                      format(cls, precision[cls], recall[cls], f1[cls], acc))
+            return precision, recall, f1, acc
         else:
-            print('Test MAE: {}'.format(mae / float(len(test_loader.dataset))))
-            print('Test MSE: {}'.format(mse / float(len(test_loader.dataset))))
-
+            print('Test MAE: {}'.format(mae / float(test_idx.shape[0])))
+            print('Test MSE: {}'.format(mse / float(test_idx.shape[0])))
             return mse, mae
 
-    def get_explanations(self, obs, acts, rewards):
+    def get_explanations(self, exp_idx, batch_size, traj_path, normalize=True):
         """
-        :param obs: input observations.
-        :param acts: input actions.
-        :param rewards: trajectory rewards.
+        :param exp_idx: training traj index.
+        :param batch_size: training batch size.
+        :param traj_path: training traj path.
+        :param normalize: normalize.
         :return: time step importance.
         """
         self.model.eval()
         self.attention.eval()
-        if torch.cuda.is_available():
-            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
 
-        output = self.model(obs, acts)
-        saliency, _ = self.attention(output)
-        saliency = saliency.squeeze(-1)
+        n_batch = int(exp_idx.shape[0] / batch_size) + 1
 
-        return saliency.cpu().detach().numpy()
+        for batch in range(n_batch):
+            batch_obs = []
+            batch_acts = []
+            batch_rewards = []
+            for idx in exp_idx[batch * batch_size:min((batch + 1) * batch_size, exp_idx.shape[0]), ]:
+                batch_obs.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['states'])
+                batch_acts.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['actions'])
+                batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
+
+            obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+
+            if self.n_action == 0:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+
+            if self.likelihood_type == 'classification':
+                rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
+            else:
+                rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
+
+            if torch.cuda.is_available():
+                obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+
+            output = self.model(obs, acts)
+            saliency, _ = self.attention(output)
+            saliency = saliency.squeeze(-1)
+
+            if batch == 0:
+                saliency_all = saliency.cpu().detach().numpy()
+            else:
+                saliency_all = np.vstack((saliency_all, saliency.cpu().detach().numpy()))
+
+        if normalize:
+            saliency_all = (saliency_all - np.min(saliency_all, axis=1)[:, None]) \
+                       / (np.max(saliency_all, axis=1)[:, None] - np.min(saliency_all, axis=1)[:, None])
+
+        return saliency_all

@@ -17,10 +17,11 @@ from .rnn_utils import CnnRnnEncoder, MlpRnnEncoder
 # Concatenate action and observation as the input and the final reward as the output.
 # Train the Seq2one + Seq2seq RNN, and use the prediction difference of p_t - p_{t-1} as the importance of r_t.
 class Rudder(object):
-    def __init__(self, seq_len, input_dim, hiddens, n_action, embed_dim=16, encoder_type='MLP', dropout_rate=0.25,
-                 rnn_cell_type='GRU', normalize=False):
+    def __init__(self, seq_len, len_diff, input_dim, hiddens, n_action=0, embed_dim=16, encoder_type='MLP',
+                 dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
         """
         :param seq_len: trajectory length.
+        :param len_diff: trajectory length diff.
         :param input_dim: the dimensionality of the input (Concatenate of observation and action).
         :param hiddens: hidden layer dimensions.
         :param n_action: number of actions.
@@ -30,6 +31,8 @@ class Rudder(object):
         :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
         :param normalize: whether to normalize the inputs.
         """
+        self.n_action = n_action
+        self.len_diff = len_diff
         self.encoder_type = encoder_type
         if self.encoder_type == 'CNN':
             self.model = CnnRnnEncoder(seq_len, input_dim, input_channles=1, hidden_dim=hiddens[-1],
@@ -73,10 +76,13 @@ class Rudder(object):
         self.model.load_state_dict(model_dict)
         return self.model, self.fc_out
 
-    def train(self, train_loader, n_epoch, lr=0.01, gamma=0.1, optimizer_choice='adam', save_path=None):
+    def train(self, train_idx, batch_size, n_epoch, traj_path, lr=0.01, gamma=0.1, optimizer_choice='adam',
+              save_path=None):
         """
-        :param train_loader: training data loader.
+        :param train_idx: training traj index.
+        :param batch_size: training batch size.
         :param n_epoch: number of training epoch.
+        :param traj_path: training traj path.
         :param lr: learning rate.
         :param gamma: learning rate decay rate.
         :param optimizer_choice: training optimizer, 'adam' or 'sgd'.
@@ -96,11 +102,28 @@ class Rudder(object):
         # Learning rate decay schedule.
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[0.5 * n_epoch, 0.75 * n_epoch], gamma=gamma)
 
-        for epoch in range(1, n_epoch + 1):
+        n_batch = int(train_idx.shape[0] / batch_size) + 1
+        for _ in tqdm.tqdm(range(1, n_epoch + 1)):
             mse = 0
             mae = 0
-            minibatch_iter = tqdm.tqdm(train_loader, desc=f"(Epoch {epoch}) Minibatch")
-            for obs, acts, rewards in minibatch_iter:
+            loss_sum = 0
+            for batch in range(n_batch):
+                batch_obs = []
+                batch_acts = []
+                batch_rewards = []
+                for idx in train_idx[batch * batch_size:min((batch + 1) * batch_size, train_idx.shape[0]), ]:
+                    batch_obs.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['states'])
+                    batch_acts.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['actions'])
+                    batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
+
+                obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+                if self.n_action == 0:
+                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+                else:
+                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+
+                rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
+
                 if torch.cuda.is_available():
                     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
                 optimizer.zero_grad()
@@ -109,21 +132,24 @@ class Rudder(object):
                 loss = self.loss(output, rewards)
                 loss.backward()
                 optimizer.step()
-                minibatch_iter.set_postfix(loss=loss.item())
+                loss_sum += loss.item()
                 mae += torch.sum(torch.abs(output[:, -1] - rewards))
                 mse += torch.sum(torch.square(output[:, -1] - rewards))
 
-            print('Training MAE: {}'.format(mae / float(len(train_loader.dataset))))
-            print('Traing MSE: {}'.format(mse / float(len(train_loader.dataset))))
+            print('Training loss: {}'.format(mae / float(train_idx.shape[0])))
+            print('Training MAE: {}'.format(mae / float(train_idx.shape[0])))
+            print('Traing MSE: {}'.format(mse / float(train_idx.shape[0])))
             scheduler.step()
 
         if save_path:
             self.save(save_path)
         return self.model
 
-    def test(self, test_loader):
+    def test(self, test_idx, batch_size, traj_path):
         """
-        :param test_loader: testing data loader.
+        :param test_idx: training traj index.
+        :param batch_size: training batch size.
+        :param traj_path: training traj path.
         :return: prediction error.
         """
         self.model.eval()
@@ -131,49 +157,92 @@ class Rudder(object):
 
         mse = 0
         mae = 0
-        for obs, acts, rewards in test_loader:
+
+        n_batch = int(test_idx.shape[0] / batch_size) + 1
+
+        for batch in range(n_batch):
+            batch_obs = []
+            batch_acts = []
+            batch_rewards = []
+            for idx in test_idx[batch * batch_size:min((batch + 1) * batch_size, test_idx.shape[0]), ]:
+                batch_obs.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['states'])
+                batch_acts.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['actions'])
+                batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
+
+            obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+            if self.n_action == 0:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+
+            rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
+
             if torch.cuda.is_available():
                 obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+
             preds = self.model(obs, acts)
             preds = self.fc_out(preds)[..., -1]
             mae += torch.sum(torch.abs(preds - rewards))
             mse += torch.sum(torch.square(preds - rewards))
 
-        print('Test MAE: {}'.format(mae/float(len(test_loader.dataset))))
-        print('Test MSE: {}'.format(mse/float(len(test_loader.dataset))))
+        print('Test MAE: {}'.format(mae/float(test_idx.shape[0])))
+        print('Test MSE: {}'.format(mse/float(test_idx.shape[0])))
         return mse, mae
 
-    def get_explanations(self, obs, acts, rewards, normalize=True):
+    def get_explanations(self, exp_idx, batch_size, traj_path, normalize=True):
         """
-        :param obs: input observations.
-        :param acts: input actions.
-        :param rewards: trajectory rewards.
+        :param exp_idx: training traj index.
+        :param batch_size: training batch size.
+        :param traj_path: training traj path.
         :param normalize: Normalization or not.
         :return: time step importance.
         """
         self.model.eval()
         self.fc_out.eval()
 
-        if torch.cuda.is_available():
-            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+        n_batch = int(exp_idx.shape[0] / batch_size) + 1
 
-        # Apply our reward redistribution model to the samples
-        preds = self.model(obs, acts)
-        preds = self.fc_out(preds)
+        for batch in range(n_batch):
+            batch_obs = []
+            batch_acts = []
+            batch_rewards = []
+            for idx in exp_idx[batch * batch_size:min((batch + 1) * batch_size, exp_idx.shape[0]), ]:
+                batch_obs.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['states'])
+                batch_acts.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['actions'])
+                batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
 
-        # Use the differences of predictions as redistributed reward
-        redistributed_reward = preds[:, 1:] - preds[:, :-1]
+            obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+            if self.n_action == 0:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
 
-        # For the first timestep we will take (0-predictions[:, :1]) as redistributed reward
-        redistributed_reward = torch.cat([preds[:, :1], redistributed_reward], dim=1)
+            rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
-        predicted_returns = redistributed_reward.sum(dim=1)
-        prediction_error = rewards - predicted_returns
+            if torch.cuda.is_available():
+                obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
 
-        # Distribute correction for prediction error equally over all sequence positions
-        redistributed_reward += prediction_error[:, None] / redistributed_reward.shape[1]
-        saliency = redistributed_reward.cpu().detach().numpy()
-        print(saliency)
+            # Apply our reward redistribution model to the samples
+            preds = self.model(obs, acts)
+            preds = self.fc_out(preds)
+
+            # Use the differences of predictions as redistributed reward
+            redistributed_reward = preds[:, 1:] - preds[:, :-1]
+
+            # For the first timestep we will take (0-predictions[:, :1]) as redistributed reward
+            redistributed_reward = torch.cat([preds[:, :1], redistributed_reward], dim=1)
+
+            predicted_returns = redistributed_reward.sum(dim=1)
+            prediction_error = rewards - predicted_returns
+
+            # Distribute correction for prediction error equally over all sequence positions
+            redistributed_reward += prediction_error[:, None] / redistributed_reward.shape[1]
+
+            if batch == 0:
+                saliency = redistributed_reward.cpu().detach().numpy()
+            else:
+                saliency = np.vstack((saliency, redistributed_reward.cpu().detach().numpy()))
+
         if normalize:
             saliency = (saliency - np.min(saliency, axis=1)[:, None]) / \
                        (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
