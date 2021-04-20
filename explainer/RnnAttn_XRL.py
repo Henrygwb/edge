@@ -7,11 +7,13 @@
 
 import tqdm
 import torch
+import timeit
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from .rnn_utils import MlpRnnEncoder, CnnRnnEncoder, TanhAttention, DotAttention
+from .quantitative_test import exp_fid2nn_topk, exp_fid2nn_zero_one, exp_stablity
 
 
 # Baseline 3. RNN with attention [Attention is not Explanation].
@@ -184,6 +186,40 @@ class RnnAttn(object):
             self.save(save_path)
         return self.model
 
+    def predict(self, obs, acts, rewards):
+        """
+        :param obs: input observations.
+        :param acts: input actions.
+        :param rewards: trajectory rewards.
+        :return: predicted outputs.
+        """
+
+        self.model.eval()
+        self.likelihood.eval()
+        self.attention.eval()
+
+        if torch.cuda.is_available():
+            obs, acts = obs.cuda(), acts.cuda()
+
+        preds = self.model(obs, acts)
+        _, preds = self.attention(preds)
+        preds = self.likelihood(preds)
+
+        rewards = rewards.cpu().detach().numpy()
+        preds = preds.cpu().detach().numpy()
+
+        if self.likelihood_type == 'classification':
+            preds_labels = np.argmax(preds, 1)
+            preds = preds[list(range(rewards.shape[0])), rewards]
+            acc = accuracy_score(rewards, preds_labels)
+            if len(preds.shape) == 2:
+                preds = preds.flatten()
+            return preds, acc
+        else:
+            if len(preds.shape) == 2:
+                preds = preds.flatten()
+            return preds
+
     def test(self, test_idx, batch_size, traj_path):
         """
         :param test_idx: training traj index.
@@ -300,3 +336,201 @@ class RnnAttn(object):
                        / (np.max(saliency_all, axis=1)[:, None] - np.min(saliency_all, axis=1)[:, None])
 
         return saliency_all
+
+    def train_by_tensor(self, train_loader, n_epoch, lr=0.01, gamma=0.1, optimizer_choice='adam', save_path=None):
+        """
+        :param train_loader: training data loader.
+        :param n_epoch: number of training epoch.
+        :param lr: learning rate.
+        :param gamma: learning rate decay rate.
+        :param optimizer_choice: training optimizer, 'adam' or 'sgd'.
+        :param save_path: model save path.
+        :return: trained model.
+        """
+        self.model.train()
+        self.likelihood.train()
+        self.attention.train()
+
+        if optimizer_choice == 'adam':
+            optimizer = optim.Adam([{'params': self.model.parameters(), 'weight_decay': 1e-4},
+                                    {'params': self.likelihood.parameters()},
+                                    {'params': self.attention.parameters()}], lr=lr)
+        else:
+            optimizer = optim.SGD([{'params': self.model.parameters(), 'weight_decay': 1e-4},
+                                   {'params': self.likelihood.parameters()},
+                                   {'params': self.attention.parameters()}], lr=lr, momentum=0.9, nesterov=True)
+
+        # Learning rate decay schedule.
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[0.5 * n_epoch, 0.75 * n_epoch],
+                                                   gamma=gamma)
+
+        for epoch in range(1, n_epoch + 1):
+            minibatch_iter = tqdm.tqdm(train_loader, desc=f"(Epoch {epoch}) Minibatch")
+            mse = 0
+            mae = 0
+            correct = 0
+            for obs, acts, rewards in minibatch_iter:
+                if torch.cuda.is_available():
+                    obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+                optimizer.zero_grad()
+                output = self.model(obs, acts)
+                _, output = self.attention(output)
+                output = self.likelihood(output)
+
+                if self.likelihood_type == 'classification':
+                    loss_fn = nn.CrossEntropyLoss()
+                else:
+                    loss_fn = nn.MSELoss()
+                    output = output.flatten()
+                    rewards = rewards.float()
+                loss = loss_fn(output, rewards)
+                loss.backward()
+                optimizer.step()
+                if self.likelihood_type == 'classification':
+                    _, preds = torch.max(output, 1)
+                    correct += preds.eq(rewards.view_as(preds)).cpu().sum()
+                else:
+                    mae += torch.sum(torch.abs(output - rewards))
+                    mse += torch.sum(torch.square(output - rewards))
+                minibatch_iter.set_postfix(loss=loss.item())
+
+            if self.likelihood_type == 'classification':
+                print('Train set: Accuracy: {}/{} ({}%)'.format(
+                    correct, len(train_loader.dataset), 100. * correct / float(len(train_loader.dataset))
+                ))
+            else:
+                print('Train MAE: {}'.format(mae / float(len(train_loader.dataset))))
+                print('Train MSE: {}'.format(mse / float(len(train_loader.dataset))))
+            scheduler.step()
+
+        if save_path:
+            self.save(save_path)
+        return self.model
+
+    def test_by_tensor(self, test_loader):
+        """
+        :param test_loader: testing data loader.
+        :return: prediction error.
+        """
+        self.model.eval()
+        self.likelihood.eval()
+        self.attention.eval()
+
+        mse = 0
+        mae = 0
+        correct = 0
+        for obs, acts, rewards in test_loader:
+            if torch.cuda.is_available():
+                obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            preds = self.model(obs, acts)
+            _, preds = self.attention(preds)
+            preds = self.likelihood(preds)
+
+            if self.likelihood_type == 'classification':
+                _, preds = torch.max(preds, 1)
+                correct += preds.eq(rewards.view_as(preds)).cpu().sum()
+            else:
+                mae += torch.sum(torch.abs(preds - rewards))
+                mse += torch.sum(torch.square(preds - rewards))
+
+        if self.likelihood_type == 'classification':
+            print('Test set: Accuracy: {}/{} ({}%)'.format(
+                correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
+            ))
+            return correct
+
+        else:
+            print('Test MAE: {}'.format(mae / float(len(test_loader.dataset))))
+            print('Test MSE: {}'.format(mse / float(len(test_loader.dataset))))
+
+            return mse, mae
+
+    def get_explanations_by_tensor(self, obs, acts, rewards, normalize=True):
+        """
+        :param obs: input observations.
+        :param acts: input actions.
+        :param rewards: trajectory rewards.
+        :return: time step importance.
+        """
+        self.model.eval()
+        self.attention.eval()
+        if torch.cuda.is_available():
+            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+
+        output = self.model(obs, acts)
+        saliency, _ = self.attention(output)
+        saliency = saliency.squeeze(-1)
+        saliency = saliency.cpu().detach().numpy()
+        if normalize:
+            saliency = (saliency - np.min(saliency, axis=1)[:, None]) / \
+                       (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
+
+        return saliency
+
+    def exp_fid_stab(self, exp_idx, batch_size, traj_path, n_stab_samples=5):
+
+        n_batch = int(exp_idx.shape[0] / batch_size)
+        sum_time = 0
+        acc_1 = 0
+        acc_2 = 0
+        acc_3 = 0
+        acc_4 = 0
+
+        for batch in range(n_batch):
+            batch_obs = []
+            batch_acts = []
+            batch_rewards = []
+            for idx in exp_idx[batch * batch_size:(batch + 1) * batch_size, ]:
+                batch_obs.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['states'])
+                batch_acts.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['actions'])
+                batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
+
+            obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+            if self.n_action == 0:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+
+            if self.likelihood_type == 'classification':
+                rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
+            else:
+                rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
+
+            start = timeit.default_timer()
+            sal = self.get_explanations_by_tensor(obs, acts, rewards)
+            stop = timeit.default_timer()
+            print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
+            sum_time += (stop - start)
+            if self.likelihood_type == 'classification':
+                fid_1, acc_1_temp = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
+                fid_2, acc_2_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
+                fid_3, acc_3_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
+                fid_4, acc_4_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
+                acc_1 += acc_1_temp
+                acc_2 += acc_2_temp
+                acc_3 += acc_3_temp
+                acc_4 += acc_4_temp
+            else:
+                fid_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
+                fid_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
+                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
+                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
+
+            stab = exp_stablity(obs, acts, rewards, self, sal, n_stab_samples)
+            fid = np.concatenate((fid_1[None,], fid_2[None,], fid_3[None,], fid_4[None,]))
+
+            if batch == 0:
+                sal_all = sal
+                fid_all = fid
+                stab_all = stab
+            else:
+                sal_all = np.vstack((sal_all, sal))
+                fid_all = np.concatenate((fid_all, fid), axis=1)
+                stab_all = np.concatenate((stab_all, stab))
+        mean_time = sum_time / exp_idx.shape[0]
+        acc_1 = acc_1 / n_batch
+        acc_2 = acc_2 / n_batch
+        acc_3 = acc_3 / n_batch
+        acc_4 = acc_4 / n_batch
+
+        return sal_all, fid_all, stab_all, [acc_1, acc_2, acc_3, acc_4], mean_time

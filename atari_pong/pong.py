@@ -2,7 +2,6 @@ import os, sys
 sys.path.append('..')
 os.environ["CUDA_VISIBLE_DEVICES"] = " "
 import torch
-import timeit
 import numpy as np
 import gym, argparse
 from explainer.DGP_XRL import DGPXRL
@@ -12,7 +11,6 @@ from explainer.gp_utils import VisualizeCovar
 from atari_pong.utils import NNPolicy, rollout
 from explainer.RnnSaliency_XRL import RnnSaliency
 from explainer.RationaleNet_XRL import RationaleNet
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--explainer", type=str, default='dgp')
@@ -49,7 +47,7 @@ len_diff = max_ep_len - seq_len
 total_data_idx = np.arange(int(np.load('trajs/' + env_name + '_num_traj_.npy')))
 train_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0]*0.7):, ]
-exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.5), ]
+exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.6), ]
 
 hiddens = [4]
 encoder_type = 'CNN'
@@ -57,6 +55,7 @@ rnn_cell_type = 'GRU'
 n_epoch = 2
 batch_size = 4
 save_path = 'exp_model_results/'
+likelihood_type = 'regression'
 
 if args.explainer == 'value':
     # Explainer 1 - Value function.
@@ -81,15 +80,29 @@ elif args.explainer == 'rudder':
     rudder_explainer.test(test_idx, batch_size, traj_path)
     rudder_explainer.load(save_path+name+'_model.data')
     rudder_explainer.test(test_idx, batch_size, traj_path)
-    start = timeit.default_timer()
-    sal_rudder = rudder_explainer.get_explanations(exp_idx, batch_size, traj_path)
-    stop = timeit.default_timer()
-    print('Rudder explanation time of {} samples:{}.'.format(exp_idx.shape[0], (stop - start)))
-    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rudder)
+    sal_rudder_all, fid_all, stab_all, mean_time = rudder_explainer.exp_fid_stab(exp_idx, batch_size, traj_path,
+                                                                                 likelihood_type)
+    print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
+    print('Std fid of the zero-one normalization: {}'.format(np.std(fid_all[0])))
+
+    print('Mean fid of the top 10 normalization: {}'.format(np.mean(fid_all[1])))
+    print('Std fid of the top 10 normalization: {}'.format(np.std(fid_all[1])))
+
+    print('Mean fid of the top 25 normalization: {}'.format(np.mean(fid_all[2])))
+    print('Std fid of the top 25 normalization: {}'.format(np.std(fid_all[2])))
+
+    print('Mean fid of the top 50 normalization: {}'.format(np.mean(fid_all[3])))
+    print('Std fid of the top 50 normalization: {}'.format(np.std(fid_all[4])))
+
+    print('Mean stab: {}'.format(np.mean(stab_all)))
+    print('Std stab: {}'.format(np.std(stab_all)))
+
+    print('Mean exp time: {}'.format(mean_time))
+
+    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rudder_all, fid=fid_all, stab=stab_all, time=mean_time)
 
 elif args.explainer == 'saliency':
     # Explainer 3 - RNN + Saliency.
-    likelihood_type = 'classification'
     use_input_attention = True
     saliency_explainer = RnnSaliency(seq_len, len_diff, input_dim, likelihood_type, hiddens, n_action,
                                      encoder_type=encoder_type, num_class=2, rnn_cell_type='LSTM',
@@ -100,56 +113,61 @@ elif args.explainer == 'saliency':
     saliency_explainer.test(test_idx, batch_size, traj_path)
     saliency_explainer.load(save_path+name+'_model.data')
     saliency_explainer.test(test_idx, batch_size, traj_path)
+    all_methods = ['gradient', 'integrated_gradient', 'unifintgrad', 'smoothgrad', 'expgrad', 'vargrad']
+    fid_all_methods = []
+    for back2rnn in [True, False]:
+        for saliency_methond in all_methods:
+            sal_saliency_all, fid_all, stab_all, acc_all, mean_time = saliency_explainer.exp_fid_stab(
+                exp_idx, batch_size, traj_path, back2rnn, saliency_methond, n_samples=2, n_stab_samples=1)
+            fid_all_methods.append(np.mean(fid_all))
+            if back2rnn:
+                np.savez_compressed(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz',
+                                    sal=sal_saliency_all, fid=fid_all, stab=stab_all, time=mean_time, acc=acc_all)
+            else:
+                np.savez_compressed(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz',
+                                    sal=sal_saliency_all, fid=fid_all, stab=stab_all, time=mean_time, acc=acc_all)
+    best_method_idx = np.argmin(fid_all_methods)
+    if best_method_idx < 6:
+        saliency_methond = all_methods[best_method_idx]
+        sal_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['sal']
+        fid_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['fid']
+        stab_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['stab']
+        time_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['time']
+        acc_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['acc']
+    else:
+        saliency_methond = all_methods[best_method_idx - 6]
+        sal_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['sal']
+        fid_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['fid']
+        stab_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['stab']
+        time_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['time']
+        acc_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['acc']
 
-    for back2rnn in [False, True]:
-        start = timeit.default_timer()
-        sal_g = saliency_explainer.get_explanations(exp_idx, batch_size, traj_path, saliency_method='gradient',
-                                                    back2rnn=back2rnn)
-        stop = timeit.default_timer()
-        print('Explanation time of {} samples:{}.'.format(exp_idx.shape[0], (stop - start)))
+    print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_best[0])))
+    print('Std fid of the zero-one normalization: {}'.format(np.std(fid_best[0])))
+    print('Acc fid of the zero-one normalization: {}'.format(acc_best[0]))
 
-        start = timeit.default_timer()
-        sal_ig = saliency_explainer.get_explanations(exp_idx, batch_size, traj_path,
-                                                     saliency_method='integrated_gradient', back2rnn=back2rnn)
-        stop = timeit.default_timer()
-        print('Explanation time of {} samples:{}.'.format(exp_idx.shape[0], (stop - start)))
+    print('Mean fid of the top 10 normalization: {}'.format(np.mean(fid_best[1])))
+    print('Std fid of the top 10 normalization: {}'.format(np.std(fid_best[1])))
+    print('Acc fid of the top 10 normalization: {}'.format(acc_best[1]))
 
-        start = timeit.default_timer()
-        sal_ig_unified = saliency_explainer.get_explanations(exp_idx, batch_size, traj_path,
-                                                             saliency_method='unifintgrad', back2rnn=back2rnn)
-        stop = timeit.default_timer()
-        print('Explanation time of {} samples:{}.'.format(exp_idx.shape[0], (stop - start)))
+    print('Mean fid of the top 25 normalization: {}'.format(np.mean(fid_best[2])))
+    print('Std fid of the top 25 normalization: {}'.format(np.std(fid_best[2])))
+    print('Acc fid of the top 25 normalization: {}'.format(acc_best[2]))
 
-        start = timeit.default_timer()
-        sal_sg = saliency_explainer.get_explanations(exp_idx, batch_size, traj_path, saliency_method='smoothgrad',
-                                                     back2rnn=back2rnn)
-        stop = timeit.default_timer()
-        print('Explanation time of {} samples:{}.'.format(exp_idx.shape[0], (stop - start)))
+    print('Mean fid of the top 50 normalization: {}'.format(np.mean(fid_best[3])))
+    print('Std fid of the top 50 normalization: {}'.format(np.std(fid_best[3])))
+    print('Acc fid of the top 50 normalization: {}'.format(acc_best[3]))
 
-        start = timeit.default_timer()
-        sal_sg_exp = saliency_explainer.get_explanations(exp_idx, batch_size, traj_path, saliency_method='expgrad',
-                                                         back2rnn=back2rnn)
-        stop = timeit.default_timer()
-        print('Explanation time of {} samples:{}.'.format(exp_idx.shape[0], (stop - start)))
+    print('Mean stab: {}'.format(np.mean(stab_best)))
+    print('Std stab: {}'.format(np.std(stab_best)))
 
-        start = timeit.default_timer()
-        sal_sg_var = saliency_explainer.get_explanations(exp_idx, batch_size, traj_path, saliency_method='vargrad',
-                                                         back2rnn=back2rnn)
-        stop = timeit.default_timer()
-        print('Explanation time of {} samples:{}.'.format(exp_idx.shape[0], (stop - start)))
+    print('Mean exp time: {}'.format(time_best))
 
-        if back2rnn:
-            np.savez_compressed(save_path+name+'_exp_rnn_layer.npz', sal_g=sal_g, sal_ig=sal_ig,
-                                sal_ig_unified=sal_ig_unified, sal_sg=sal_sg, sal_sg_exp=sal_sg_exp,
-                                sal_sg_var=sal_sg_var)
-        else:
-            np.savez_compressed(save_path+name+'_exp_input_layer.npz', sal_g=sal_g, sal_ig=sal_ig,
-                                sal_ig_unified=sal_ig_unified, sal_sg=sal_sg, sal_sg_exp=sal_sg_exp,
-                                sal_sg_var=sal_sg_var)
+    np.savez_compressed(save_path + name + '_exp_best.npz',
+                        sal=sal_best, fid=fid_best, stab=stab_best, time=time_best, acc=acc_best)
 
 elif args.explainer == 'attention':
     # Explainer 4 - AttnRNN.
-    likelihood_type = 'classification'
     attention_type = 'tanh'
     name = 'attention_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + attention_type
 
@@ -161,15 +179,35 @@ elif args.explainer == 'attention':
     attention_explainer.test(test_idx, batch_size, traj_path)
     attention_explainer.load(save_path+name+'_model.data')
     attention_explainer.test(test_idx, batch_size, traj_path)
-    start = timeit.default_timer()
-    sal_attention = attention_explainer.get_explanations(exp_idx, batch_size, traj_path)
-    stop = timeit.default_timer()
-    print('Explanation time of {} samples:{}.'.format(exp_idx.shape[0], (stop - start)))
-    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_attention)
+
+    sal_attention_all, fid_all, stab_all, acc_all, mean_time = attention_explainer.exp_fid_stab(exp_idx,
+                                                                                                batch_size, traj_path)
+    print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
+    print('Std fid of the zero-one normalization: {}'.format(np.std(fid_all[0])))
+    print('Acc fid of the zero-one normalization: {}'.format(acc_all[0]))
+
+    print('Mean fid of the top 10 normalization: {}'.format(np.mean(fid_all[1])))
+    print('Std fid of the top 10 normalization: {}'.format(np.std(fid_all[1])))
+    print('Acc fid of the top 10 normalization: {}'.format(acc_all[1]))
+
+    print('Mean fid of the top 25 normalization: {}'.format(np.mean(fid_all[2])))
+    print('Std fid of the top 25 normalization: {}'.format(np.std(fid_all[2])))
+    print('Acc fid of the top 25 normalization: {}'.format(acc_all[2]))
+
+    print('Mean fid of the top 50 normalization: {}'.format(np.mean(fid_all[3])))
+    print('Std fid of the top 50 normalization: {}'.format(np.std(fid_all[3])))
+    print('Acc fid of the top 50 normalization: {}'.format(acc_all[3]))
+
+    print('Mean stab: {}'.format(np.mean(stab_all)))
+    print('Std stab: {}'.format(np.std(stab_all)))
+
+    print('Mean exp time: {}'.format(mean_time))
+
+    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_attention_all, fid=fid_all, stab=stab_all, time=mean_time,
+                        acc=acc_all)
 
 elif args.explainer == 'rationale':
     # Explainer 5 - RationaleNet.
-    likelihood_type = 'classification'
     name = 'rationale_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type
 
     rationale_explainer = RationaleNet(seq_len, len_diff, input_dim, likelihood_type, hiddens, n_action,
@@ -179,15 +217,35 @@ elif args.explainer == 'rationale':
     rationale_explainer.test(test_idx, batch_size, traj_path)
     rationale_explainer.load(save_path+name+'_model.data')
     rationale_explainer.test(test_idx, batch_size, traj_path)
-    start = timeit.default_timer()
-    sal_rationale = rationale_explainer.get_explanations(exp_idx, batch_size, traj_path)
-    stop = timeit.default_timer()
-    print('Explanation time of {} samples:{}.'.format(exp_idx.shape[0], (stop - start)))
-    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rationale)
+
+    sal_rationale_all, fid_all, stab_all, acc_all, mean_time = rationale_explainer.exp_fid_stab(exp_idx,
+                                                                                                batch_size, traj_path)
+    print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
+    print('Std fid of the zero-one normalization: {}'.format(np.std(fid_all[0])))
+    print('Acc fid of the zero-one normalization: {}'.format(acc_all[0]))
+
+    print('Mean fid of the top 10 normalization: {}'.format(np.mean(fid_all[1])))
+    print('Std fid of the top 10 normalization: {}'.format(np.std(fid_all[1])))
+    print('Acc fid of the top 10 normalization: {}'.format(acc_all[1]))
+
+    print('Mean fid of the top 25 normalization: {}'.format(np.mean(fid_all[2])))
+    print('Std fid of the top 25 normalization: {}'.format(np.std(fid_all[2])))
+    print('Acc fid of the top 25 normalization: {}'.format(acc_all[2]))
+
+    print('Mean fid of the top 50 normalization: {}'.format(np.mean(fid_all[3])))
+    print('Std fid of the top 50 normalization: {}'.format(np.std(fid_all[3])))
+    print('Acc fid of the top 50 normalization: {}'.format(acc_all[3]))
+
+    print('Mean stab: {}'.format(np.mean(stab_all)))
+    print('Std stab: {}'.format(np.std(stab_all)))
+
+    print('Mean exp time: {}'.format(mean_time))
+
+    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rationale_all, fid=fid_all, stab=stab_all, time=mean_time,
+                        acc=acc_all)
 
 elif args.explainer == 'dgp':
     # Explainer 6 - DGP.
-    likelihood_type = 'classification'
     rnn_cell_type = 'GRU'
     optimizer = 'adam'
     num_inducing_points = 20
@@ -216,13 +274,32 @@ elif args.explainer == 'dgp':
     dgp_explainer.load(save_path+name+'_model.data')
     dgp_explainer.test(test_idx, batch_size, traj_path)
 
-    start = timeit.default_timer()
-    sal_rationale, covariance = dgp_explainer.get_explanations(exp_idx, batch_size, traj_path)
-    stop = timeit.default_timer()
-    print('Explanation time of {} samples:{}.'.format(exp_idx.shape[0], (stop - start)))
+    sal_rationale_all, covar_all, fid_all, stab_all, acc_all, mean_time = dgp_explainer.exp_fid_stab(exp_idx,
+                                                                                                     batch_size,
+                                                                                                     traj_path)
+    print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
+    print('Std fid of the zero-one normalization: {}'.format(np.std(fid_all[0])))
+    print('Acc fid of the zero-one normalization: {}'.format(acc_all[0]))
 
-    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rationale, full_covar=covariance[0], traj_cova=covariance[1],
-                        step_covar=covariance[2])
+    print('Mean fid of the top 10 normalization: {}'.format(np.mean(fid_all[1])))
+    print('Std fid of the top 10 normalization: {}'.format(np.std(fid_all[1])))
+    print('Acc fid of the top 10 normalization: {}'.format(acc_all[1]))
+
+    print('Mean fid of the top 25 normalization: {}'.format(np.mean(fid_all[2])))
+    print('Std fid of the top 25 normalization: {}'.format(np.std(fid_all[2])))
+    print('Acc fid of the top 25 normalization: {}'.format(acc_all[2]))
+
+    print('Mean fid of the top 50 normalization: {}'.format(np.mean(fid_all[3])))
+    print('Std fid of the top 50 normalization: {}'.format(np.std(fid_all[3])))
+    print('Acc fid of the top 50 normalization: {}'.format(acc_all[3]))
+
+    print('Mean stab: {}'.format(np.mean(stab_all)))
+    print('Std stab: {}'.format(np.std(stab_all)))
+
+    print('Mean exp time: {}'.format(mean_time))
+
+    np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rationale_all, fid=fid_all, stab=stab_all, time=mean_time,
+                        acc=acc_all, full_covar=covar_all[0], traj_cova=covar_all[1], step_covar=covar_all[2])
 
     # VisualizeCovar(covariance[0], save_path+name+'_dgp_full_covar.pdf')
     # VisualizeCovar(covariance[1], save_path+name+'_dgp_traj_covar.pdf')

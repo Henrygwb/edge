@@ -17,11 +17,13 @@
 # 9. Orthogonally decoupled VGPs. Using a different set of inducing points for the mean and covariance functions.
 #    Use more inducing points for the mean and fewer inducing points for the covariance.
 
-import torch
 import tqdm
+import torch
+import timeit
 import gpytorch
 import numpy as np
 import torch.optim as optim
+from .quantitative_test import exp_fid2nn_topk, exp_fid2nn_zero_one
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from .gp_utils import DGPXRLModel, CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood
 
@@ -277,7 +279,43 @@ class DGPXRL(object):
             self.save(save_path)
         return self.model
 
-    # test function.
+    def predict(self, obs, acts, rewards):
+        """
+        :param obs: input observations.
+        :param acts: input actions.
+        :param rewards: trajectory rewards.
+        :return: predicted outputs.
+        """
+
+        self.model.eval()
+        self.likelihood.eval()
+
+        if torch.cuda.is_available():
+            obs, acts = obs.cuda(), acts.cuda()
+
+        f_predicted = self.model(obs, acts)
+        output = self.likelihood(f_predicted)  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
+
+        if self.likelihood_type == 'classification':
+            preds = output.probs.mean(0)
+        else:
+            preds = output.mean
+
+        rewards = rewards.cpu().detach().numpy()
+        preds = preds.cpu().detach().numpy()
+
+        if self.likelihood_type == 'classification':
+            preds_labels = np.argmax(preds, 1)
+            preds = preds[list(range(rewards.shape[0])), rewards]
+            acc = accuracy_score(rewards, preds_labels)
+            if len(preds.shape) == 2:
+                preds = preds.flatten()
+            return preds, acc
+        else:
+            if len(preds.shape) == 2:
+                preds = preds.flatten()
+            return preds
+
     def test(self, test_idx, batch_size, traj_path, likelihood_sample_size=16):
         """
         :param test_idx: training traj index.
@@ -418,6 +456,238 @@ class DGPXRL(object):
                          / (np.max(saliency_all, axis=1)[:, None] - np.min(saliency_all, axis=1)[:, None])
 
         return saliency_all, (covar_all_all, covar_traj_all, covar_step_all)
+
+    def train_by_tensor(self, save_path=None, likelihood_sample_size=8):
+
+        # specify the mode of the modules in the model; some modules may have different behaviors under training and eval
+        # module, such as dropout and batch normalization.
+        self.model.train()
+        self.likelihood.train()
+
+        for epoch in range(1, self.n_epoch + 1):
+            mse = 0
+            mae = 0
+            correct = 0
+            with gpytorch.settings.use_toeplitz(False):
+                minibatch_iter = tqdm.tqdm(self.train_loader, desc=f"(Epoch {epoch}) Minibatch")
+                with gpytorch.settings.num_likelihood_samples(likelihood_sample_size):
+                    for obs, acts, rewards in minibatch_iter:
+                        if torch.cuda.is_available():
+                            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+                        if self.using_ngd:
+                            self.variational_ngd_optimizer.zero_grad()
+                            self.hyperparameter_optimizer.zero_grad()
+                        else:
+                            self.optimizer.zero_grad()
+                        output = self.model(obs, acts)  # marginal variational posterior, q(f|x).
+                        loss = -self.mll(output, rewards)  # approximated ELBO.
+                        loss.backward()
+                        if self.using_ngd:
+                            self.variational_ngd_optimizer.step()
+                            self.hyperparameter_optimizer.step()
+                        else:
+                            self.optimizer.step()
+
+                        output = self.likelihood(
+                            output)  # This gives us 8 samples from the predictive distribution (q(y|f_*)).
+                        if self.likelihood_type == 'classification':
+                            pred = output.probs.mean(0).argmax(
+                                -1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
+                            correct += pred.eq(rewards.view_as(pred)).cpu().sum()
+                        else:
+                            preds = output.mean
+                            mae += torch.sum(torch.abs(preds - rewards))
+                            mse += torch.sum(torch.square(preds - rewards))
+
+                        minibatch_iter.set_postfix(loss=loss.item())
+
+                    if self.likelihood_type == 'classification':
+                        print('Train set: Accuracy: {}/{} ({}%)'.format(
+                            correct, len(self.train_loader.dataset),
+                            100. * correct / float(len(self.train_loader.dataset))
+                        ))
+                    else:
+                        print('Train MAE: {}'.format(mae / float(len(self.train_loader.dataset))))
+                        print('Train MSE: {}'.format(mse / float(len(self.train_loader.dataset))))
+
+            self.scheduler.step()
+
+        if save_path:
+            self.save(save_path)
+        return self.model
+
+    # test function.
+    def test_by_tensor(self, test_loader, likelihood_sample_size=16):
+        # Specify that the model is in eval mode.
+        self.model.eval()
+        self.likelihood.eval()
+
+        correct = 0
+        mse = 0
+        mae = 0
+        with torch.no_grad(), gpytorch.settings.num_likelihood_samples(likelihood_sample_size):
+            for obs, acts, rewards in test_loader:
+                if torch.cuda.is_available():
+                    obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+                f_predicted = self.model(obs, acts)
+                output = self.likelihood(
+                    f_predicted)  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
+                if self.likelihood_type == 'classification':
+                    pred = output.probs.mean(0).argmax(
+                        -1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
+                    correct += pred.eq(rewards.view_as(pred)).cpu().sum()
+                else:
+                    preds = output.mean
+                    mae += torch.sum(torch.abs(preds - rewards))
+                    mse += torch.sum(torch.square(preds - rewards))
+            if self.likelihood_type == 'classification':
+                print('Test set: Accuracy: {}/{} ({}%)'.format(
+                    correct, len(test_loader.dataset), 100. * correct / float(len(test_loader.dataset))
+                ))
+            else:
+                print('Test MAE: {}'.format(mae / float(len(test_loader.dataset))))
+                print('Test MSE: {}'.format(mse / float(len(test_loader.dataset))))
+
+    def get_explanations_by_tensor(self, obs, acts, rewards, normalize=True):
+        """
+        :param obs: input observations.
+        :param acts: input actions.
+        :param rewards: trajectory rewards.
+        :return: time step importance.
+        """
+
+        self.model.eval()
+        self.likelihood.eval()
+
+        if torch.cuda.is_available():
+            obs, acts = obs.cuda(), acts.cuda()
+
+        importance = self.likelihood.mixing_weights
+        step_embedding, traj_embedding = self.model.encoder(obs, acts)  # (N, T, P) -> (N, T, D), (N, D).
+        traj_embedding = traj_embedding[:, None, :].repeat(1, obs.shape[1], 1)  # (N, D) -> (N, T, D)
+        features = torch.cat([step_embedding, traj_embedding], dim=-1)  # (N, T, 2D)
+        features = features.view(obs.size(0) * obs.size(1), features.size(-1))
+        covar_all = self.model.gp_layer.covar_module(features)
+        covar_step = self.model.gp_layer.step_kernel(features)
+        covar_traj = self.model.gp_layer.traj_kernel(features)
+        # TODO: combine importance weight with covariance structure.
+
+        importance = importance.cpu().detach().numpy()
+        if len(importance.shape) == 2:
+            importance = importance.transpose()
+            importance = np.repeat(importance[None, ...], rewards.shape[0], axis=0)
+            if importance.shape[-1] > 1:
+                importance = importance[list(range(rewards.shape[0])), :, rewards]
+            else:
+                importance = np.squeeze(importance, -1)
+        if normalize:
+            importance = (importance - np.min(importance, axis=1)[:, None]) \
+                         / (np.max(importance, axis=1)[:, None] - np.min(importance, axis=1)[:, None])
+
+        return importance, (covar_all.cpu().detach().numpy(), covar_traj.cpu().detach().numpy(),
+                            covar_step.cpu().detach().numpy())
+
+    def exp_fid_stab(self, exp_idx, batch_size, traj_path, n_stab_samples=5):
+
+        n_batch = int(exp_idx.shape[0] / batch_size)
+        sum_time = 0
+        acc_1 = 0
+        acc_2 = 0
+        acc_3 = 0
+        acc_4 = 0
+
+        for batch in range(n_batch):
+            batch_obs = []
+            batch_acts = []
+            batch_rewards = []
+            for idx in exp_idx[batch * batch_size:(batch + 1) * batch_size, ]:
+                batch_obs.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['states'])
+                batch_acts.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['actions'])
+                batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
+
+            obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+            if self.n_action == 0:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+
+            if self.likelihood_type == 'classification':
+                rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
+            else:
+                rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
+
+            start = timeit.default_timer()
+            sal, cov = self.get_explanations_by_tensor(obs, acts, rewards)
+            stop = timeit.default_timer()
+            print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
+            sum_time += (stop - start)
+            if self.likelihood_type == 'classification':
+                fid_1, acc_1_temp = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
+                fid_2, acc_2_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
+                fid_3, acc_3_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
+                fid_4, acc_4_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
+                acc_1 += acc_1_temp
+                acc_2 += acc_2_temp
+                acc_3 += acc_3_temp
+                acc_4 += acc_4_temp
+            else:
+                fid_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
+                fid_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
+                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
+                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
+
+            stab = self.exp_stablity(obs, acts, rewards, sal, n_stab_samples)
+            fid = np.concatenate((fid_1[None,], fid_2[None,], fid_3[None,], fid_4[None,]))
+
+            if batch == 0:
+                sal_all = sal
+                fid_all = fid
+                stab_all = stab
+                covar_all_all = cov[0][None, ...]
+                covar_traj_all = cov[1][None, ...]
+                covar_step_all = cov[2][None, ...]
+            else:
+                sal_all = np.vstack((sal_all, sal))
+                fid_all = np.concatenate((fid_all, fid), axis=1)
+                stab_all = np.concatenate((stab_all, stab))
+                covar_all_all = np.concatenate((covar_all_all, cov[0][None, ...]))
+                covar_traj_all = np.concatenate((covar_traj_all, cov[1][None, ...]))
+                covar_step_all = np.concatenate((covar_step_all, cov[2][None, ...]))
+
+        mean_time = sum_time / exp_idx.shape[0]
+        acc_1 = acc_1 / n_batch
+        acc_2 = acc_2 / n_batch
+        acc_3 = acc_3 / n_batch
+        acc_4 = acc_4 / n_batch
+
+        return sal_all, (covar_all_all, covar_traj_all, covar_step_all), fid_all, stab_all, \
+               [acc_1, acc_2, acc_3, acc_4], mean_time
+
+    def exp_stablity(self, obs, acts, rewards, saliency, num_sample=5, eps=10):
+        def get_l2_diff(x, y):
+            diff_square = np.square((x - y))
+            if len(x.shape) > 2:
+                diff_square_sum = np.apply_over_axes(np.sum, diff_square, list(range(2, len(x.shape))))
+                diff_square_sum = diff_square_sum.reshape(x.shape[0], x.shape[1])
+            else:
+                diff_square_sum = diff_square
+            diff_square_sum = diff_square_sum.sum(-1)
+            diff = np.sqrt(diff_square_sum)
+            return diff
+        stab = []
+        for _ in range(num_sample):
+            noise = torch.rand(obs.shape) * eps
+            noisy_obs = obs + noise
+            diff_x = get_l2_diff(obs.cpu().detach().numpy(), noisy_obs.cpu().detach().numpy())
+            diff_x[diff_x==0] = 1e-8
+            noisy_saliency, _ = self.get_explanations_by_tensor(noisy_obs, acts, rewards)
+            diff_x_sal = get_l2_diff(saliency, noisy_saliency)
+            stab.append((diff_x_sal / diff_x))
+        stab = np.array(stab)
+        stab = np.max(stab, axis=0)
+
+        return stab
+
 
 
 # All the keys in the state_dict.

@@ -7,8 +7,10 @@
 
 import tqdm
 import torch
+import timeit
 import numpy as np
 import torch.optim as optim
+from .quantitative_test import exp_stablity
 from .rnn_utils import CnnRnnEncoder, MlpRnnEncoder
 
 
@@ -145,6 +147,25 @@ class Rudder(object):
             self.save(save_path)
         return self.model
 
+    def predict(self, obs, acts, rewards):
+        """
+        :param obs: input observations.
+        :param acts: input actions.
+        :param rewards: trajectory rewards.
+        :return: predicted outputs.
+        """
+
+        self.model.eval()
+        self.fc_out.eval()
+
+        if torch.cuda.is_available():
+            obs, acts = obs.cuda(), acts.cuda()
+
+        preds = self.model(obs, acts)
+        preds = self.fc_out(preds)[..., -1]
+
+        return preds.cpu().detach().numpy()
+
     def test(self, test_idx, batch_size, traj_path):
         """
         :param test_idx: training traj index.
@@ -153,7 +174,7 @@ class Rudder(object):
         :return: prediction error.
         """
         self.model.eval()
-        self.fc_out.train()
+        self.fc_out.eval()
 
         mse = 0
         mae = 0
@@ -248,3 +269,209 @@ class Rudder(object):
                        (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
 
         return saliency
+
+    def get_explanations_by_tensor(self, obs, acts, rewards, normalize=True):
+        """
+        :param obs: input observations.
+        :param acts: input actions.
+        :param rewards: trajectory rewards.
+        :param normalize: Normalization or not.
+        :return: time step importance.
+        """
+        self.model.eval()
+        self.fc_out.eval()
+
+        if torch.cuda.is_available():
+            obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+
+        # Apply our reward redistribution model to the samples
+        preds = self.model(obs, acts)
+        preds = self.fc_out(preds)
+
+        # Use the differences of predictions as redistributed reward
+        redistributed_reward = preds[:, 1:] - preds[:, :-1]
+
+        # For the first timestep we will take (0-predictions[:, :1]) as redistributed reward
+        redistributed_reward = torch.cat([preds[:, :1], redistributed_reward], dim=1)
+
+        predicted_returns = redistributed_reward.sum(dim=1)
+        prediction_error = rewards - predicted_returns
+
+        # Distribute correction for prediction error equally over all sequence positions
+        redistributed_reward += prediction_error[:, None] / redistributed_reward.shape[1]
+        saliency = redistributed_reward.cpu().detach().numpy()
+
+        if normalize:
+            saliency = (saliency - np.min(saliency, axis=1)[:, None]) / \
+                       (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
+
+        return saliency
+
+    def train_by_tensor(self, train_loader, n_epoch, lr=0.01, gamma=0.1, optimizer_choice='adam', save_path=None):
+        """
+        :param train_loader: training data loader.
+        :param n_epoch: number of training epoch.
+        :param lr: learning rate.
+        :param gamma: learning rate decay rate.
+        :param optimizer_choice: training optimizer, 'adam' or 'sgd'.
+        :param save_path: model save path.
+        :return: trained model.
+        """
+        self.model.train()
+        self.fc_out.train()
+
+        if optimizer_choice == 'adam':
+            optimizer = optim.Adam([{'params': self.model.parameters(), 'weight_decay': 1e-4},
+                                    {'params': self.fc_out.parameters()}], lr=lr)
+        else:
+            optimizer = optim.SGD([{'params': self.model.parameters(), 'weight_decay': 1e-4},
+                                   {'params': self.fc_out.parameters()}], lr=lr, momentum=0.9, nesterov=True)
+
+        # Learning rate decay schedule.
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[0.5 * n_epoch, 0.75 * n_epoch], gamma=gamma)
+
+        for epoch in range(1, n_epoch + 1):
+            mse = 0
+            mae = 0
+            minibatch_iter = tqdm.tqdm(train_loader, desc=f"(Epoch {epoch}) Minibatch")
+            for obs, acts, rewards in minibatch_iter:
+                if torch.cuda.is_available():
+                    obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+                optimizer.zero_grad()
+                output = self.model(obs, acts)
+                output = self.fc_out(output)
+                loss = self.loss(output, rewards)
+                loss.backward()
+                optimizer.step()
+                minibatch_iter.set_postfix(loss=loss.item())
+                mae += torch.sum(torch.abs(output[:, -1] - rewards))
+                mse += torch.sum(torch.square(output[:, -1] - rewards))
+
+            print('Training MAE: {}'.format(mae / float(len(train_loader.dataset))))
+            print('Traing MSE: {}'.format(mse / float(len(train_loader.dataset))))
+            scheduler.step()
+
+        if save_path:
+            self.save(save_path)
+        return self.model
+
+    def test_by_tensor(self, test_loader):
+        """
+        :param test_loader: testing data loader.
+        :return: prediction error.
+        """
+        self.model.eval()
+        self.fc_out.eval()
+
+        mse = 0
+        mae = 0
+        for obs, acts, rewards in test_loader:
+            if torch.cuda.is_available():
+                obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            preds = self.model(obs, acts)
+            preds = self.fc_out(preds)[..., -1]
+            mae += torch.sum(torch.abs(preds - rewards))
+            mse += torch.sum(torch.square(preds - rewards))
+
+        print('Test MAE: {}'.format(mae / float(len(test_loader.dataset))))
+        print('Test MSE: {}'.format(mse / float(len(test_loader.dataset))))
+        return mse, mae
+
+    def exp_fid_stab(self, exp_idx, batch_size, traj_path, task_type):
+        """
+        return explanations, fidelity, stability, runtime.
+        """
+
+        n_batch = int(exp_idx.shape[0] / batch_size)
+        sum_time = 0
+        for batch in range(n_batch):
+            batch_obs = []
+            batch_acts = []
+            batch_rewards = []
+            for idx in exp_idx[batch * batch_size:(batch + 1) * batch_size, ]:
+                batch_obs.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['states'])
+                batch_acts.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['actions'])
+                batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
+
+            obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+            if self.n_action == 0:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+
+            rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
+            start = timeit.default_timer()
+            sal_rudder = self.get_explanations_by_tensor(obs, acts, rewards)
+            stop = timeit.default_timer()
+            print('Rudder explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
+            sum_time += (stop - start)
+            if task_type == 'classification':
+                _, fid_1 = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder)
+                _, fid_2 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 10)
+                _, fid_3 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 25)
+                _, fid_4 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 50)
+            else:
+                fid_1, _ = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder)
+                fid_2, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 10)
+                fid_3, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 25)
+                fid_4, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 50)
+
+            stab = exp_stablity(obs, acts, rewards, self, sal_rudder)
+            fid = np.concatenate((fid_1[None, ], fid_2[None, ], fid_3[None, ], fid_4[None, ]))
+
+            if batch == 0:
+                sal_rudder_all = sal_rudder
+                fid_all = fid
+                stab_all = stab
+            else:
+                sal_rudder_all = np.vstack((sal_rudder_all, sal_rudder))
+                fid_all = np.concatenate((fid_all, fid), axis=1)
+                stab_all = np.concatenate((stab_all, stab))
+        mean_time = sum_time/exp_idx.shape[0]
+
+        return sal_rudder_all, fid_all, stab_all, mean_time
+
+    @staticmethod
+    def exp_fid2nn_zero_one(obs, acts, rewards, explainer, saliency):
+        obs.requires_grad = False
+        acts.requires_grad = False
+
+        if type(saliency) == np.ndarray:
+            saliency = torch.tensor(saliency, dtype=torch.float32)
+
+        if len(obs.shape) == 5:
+            saliency = saliency[:, :, None, None, None]
+        else:
+            saliency = saliency[:, :, None]
+
+        preds_orin = explainer.predict(obs, acts, rewards)
+        preds_sal = explainer.predict(saliency * obs, acts, rewards)
+        abs_diff = np.abs(preds_sal-preds_orin)
+        rewards = rewards.cpu().detach().numpy()
+        preds_sal = np.abs(preds_sal - rewards)
+        preds_sal = 1 - ((np.exp(preds_sal) - np.exp(-preds_sal)) / (np.exp(preds_sal) + np.exp(-preds_sal)))
+        return abs_diff, -np.log(preds_sal)
+
+    @staticmethod
+    def exp_fid2nn_topk(obs, acts, rewards, explainer, saliency, num_fea):
+        obs.requires_grad = False
+        acts.requires_grad = False
+
+        preds_orin = explainer.predict(obs, acts, rewards)
+
+        if type(saliency) == torch.Tensor:
+            saliency = saliency.cpu().detach().numpy()
+
+        importance_id_sorted = np.argsort(saliency, axis=1)[:, ::-1] # high to low.
+        nonimportance_id = importance_id_sorted[:, num_fea:]
+        nonimportance_id = nonimportance_id.copy()
+        for i in range(obs.shape[0]):
+            obs[i, nonimportance_id[i], ...] = 0
+            acts[i, nonimportance_id[i], ...] = 0
+
+        preds_sal = explainer.predict(obs, acts, rewards)
+        abs_diff = np.abs(preds_sal-preds_orin)
+        rewards = rewards.cpu().detach().numpy()
+        preds_sal = np.abs(preds_sal - rewards)
+        preds_sal = 1 - ((np.exp(preds_sal) - np.exp(-preds_sal)) / (np.exp(preds_sal) + np.exp(-preds_sal)))
+        return abs_diff, -np.log(preds_sal)
