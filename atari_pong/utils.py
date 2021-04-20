@@ -125,5 +125,5 @@ def rollout(model, env, num_traj, max_ep_len=1e3, save_path=None, render=False):
                                 actions=acts, values=values, states=states, rewards=rewards, final_rewards=final_rewards)
             traj_count += 1
 
-    np.save(save_path + '_max_length_.npy', max_ep_length)
-    np.save(save_path + '_num_traj_.npy', traj_count)
+    np.save(save_path + '_max_length.npy', max_ep_length)
+    np.save(save_path + '_num_traj.npy', traj_count)
