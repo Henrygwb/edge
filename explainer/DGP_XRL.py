@@ -269,6 +269,9 @@ class DGPXRL(object):
                         for cls in range(len(precision)):
                             print('Train results of class {}: Precision: {}, Recall: {}, F1: {}, Accuracy: {}.'.
                                   format(cls, precision[cls], recall[cls], f1[cls], acc))
+                        precision, recall, f1, _ = precision_recall_fscore_support(rewards_all, preds_all, average='micro')
+                        print('Overall training results: Precision: {}, Recall: {}, F1: {}, Accuracy: {}.'.
+                              format(precision, recall, f1, acc))
                     else:
                         print('Train MAE: {}'.format(mae / float(self.train_len)))
                         print('Train MSE: {}'.format(mse / float(self.train_len)))
@@ -378,6 +381,10 @@ class DGPXRL(object):
             for cls in range(len(precision)):
                 print('Test results of class {}: Precision: {}, Recall: {}, F1: {}, Accuracy: {}.'.
                       format(cls, precision[cls], recall[cls], f1[cls], acc))
+            precision, recall, f1, _ = precision_recall_fscore_support(rewards_all, preds_all, average='micro')
+            print('Overall test results: Precision: {}, Recall: {}, F1: {}, Accuracy: {}.'.
+                  format(precision, recall, f1, acc))
+
             return precision, recall, f1, acc
         else:
             print('Test MAE: {}'.format(mae / float(test_idx.shape[0])))
