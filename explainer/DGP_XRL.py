@@ -210,7 +210,7 @@ class DGPXRL(object):
             n_batch = int(train_idx.shape[0] / batch_size) + 1
 
         for epoch in range(1, self.n_epoch + 1):
-            print('{} out of {} epochs.'.format(epoch, self.n_epoch+1))
+            print('{} out of {} epochs.'.format(epoch, self.n_epoch))
             mse = 0
             mae = 0
             loss_sum = 0
@@ -284,6 +284,8 @@ class DGPXRL(object):
 
             self.scheduler.step()
             self.test(test_idx, batch_size, traj_path)
+            self.model.train()
+            self.likelihood.train()
 
         if save_path:
             self.save(save_path)
@@ -342,6 +344,9 @@ class DGPXRL(object):
         self.model.eval()
         self.likelihood.eval()
 
+        self.model = self.model.cpu()
+        self.likelihood = self.likelihood.cpu()
+
         mse = 0
         mae = 0
         preds_all = []
@@ -382,6 +387,9 @@ class DGPXRL(object):
                     preds = output.mean
                     mae += torch.sum(torch.abs(preds - rewards))
                     mse += torch.sum(torch.square(preds - rewards))
+
+        if torch.cuda.is_available():
+            self.model, self.likelihood = self.model.cuda(), self.likelihood.cuda()
 
         if self.likelihood_type == 'classification':
             preds_all = np.array(preds_all)

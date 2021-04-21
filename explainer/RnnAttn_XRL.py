@@ -123,7 +123,7 @@ class RnnAttn(object):
         else:
             n_batch = int(train_idx.shape[0] / batch_size) + 1
         for epoch in range(1, n_epoch + 1):
-            print('{} out of {} epochs.'.format(epoch, n_epoch+1))
+            print('{} out of {} epochs.'.format(epoch, n_epoch))
             mse = 0
             mae = 0
             loss_sum = 0
@@ -190,6 +190,9 @@ class RnnAttn(object):
                 print('Train MSE: {}'.format(mse / float(train_idx.shape[0])))
             scheduler.step()
             self.test(test_idx, batch_size, traj_path)
+            self.model.train()
+            self.likelihood.train()
+            self.attention.train()
 
         if save_path:
             self.save(save_path)
@@ -239,13 +242,20 @@ class RnnAttn(object):
         self.model.eval()
         self.likelihood.eval()
         self.attention.eval()
+        self.model = self.model.cpu()
+        self.likelihood = self.likelihood.cpu()
+        self.attention = self.attention.cpu()
 
         mse = 0
         mae = 0
         preds_all = []
         rewards_all = []
 
-        n_batch = int(test_idx.shape[0] / batch_size) + 1
+        if test_idx.shape[0] % batch_size == 0:
+            n_batch = int(test_idx.shape[0] / batch_size)
+        else:
+            n_batch = int(test_idx.shape[0] / batch_size) + 1
+
         for batch in range(n_batch):
             batch_obs = []
             batch_acts = []
@@ -280,6 +290,11 @@ class RnnAttn(object):
                 mae += torch.sum(torch.abs(preds - rewards))
                 mse += torch.sum(torch.square(preds - rewards))
 
+        if torch.cuda.is_available():
+            self.model = self.model.cuda()
+            self.likelihood = self.likelihood.cuda()
+            self.attention = self.attention.cuda()
+
         if self.likelihood_type == 'classification':
             preds_all = np.array(preds_all)
             rewards_all = np.array(rewards_all)
@@ -309,13 +324,13 @@ class RnnAttn(object):
         self.model.eval()
         self.attention.eval()
 
-        n_batch = int(exp_idx.shape[0] / batch_size) + 1
+        n_batch = int(exp_idx.shape[0] / batch_size)
 
         for batch in range(n_batch):
             batch_obs = []
             batch_acts = []
             batch_rewards = []
-            for idx in exp_idx[batch * batch_size:min((batch + 1) * batch_size, exp_idx.shape[0]), ]:
+            for idx in exp_idx[batch * batch_size:(batch + 1) * batch_size, ]:
                 batch_obs.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['states'])
                 batch_acts.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['actions'])
                 batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
