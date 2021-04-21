@@ -56,6 +56,7 @@ n_epoch = 200
 batch_size = 40
 save_path = 'exp_model_results/'
 likelihood_type = 'classification'
+n_stab_samples = 10
 
 if args.explainer == 'value':
     # Explainer 1 - Value function.
@@ -81,7 +82,7 @@ elif args.explainer == 'rudder':
     rudder_explainer.load(save_path+name+'_model.data')
     rudder_explainer.test(test_idx, batch_size, traj_path)
     sal_rudder_all, fid_all, stab_all, mean_time = rudder_explainer.exp_fid_stab(exp_idx, batch_size, traj_path,
-                                                                                 likelihood_type)
+                                                                                 likelihood_type, n_stab_samples)
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
     print('Std fid of the zero-one normalization: {}'.format(np.std(fid_all[0])))
 
@@ -118,7 +119,7 @@ elif args.explainer == 'saliency':
     for back2rnn in [True, False]:
         for saliency_methond in all_methods:
             sal_saliency_all, fid_all, stab_all, acc_all, mean_time = saliency_explainer.exp_fid_stab(
-                exp_idx, batch_size, traj_path, back2rnn, saliency_methond, n_samples=15, n_stab_samples=5)
+                exp_idx, batch_size, traj_path, back2rnn, saliency_methond, n_samples=15, n_stab_samples=n_stab_samples)
             fid_all_methods.append(np.mean(fid_all))
             if back2rnn:
                 np.savez_compressed(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz',
@@ -182,7 +183,9 @@ elif args.explainer == 'attention':
     attention_explainer.test(test_idx, batch_size, traj_path)
 
     sal_attention_all, fid_all, stab_all, acc_all, mean_time = attention_explainer.exp_fid_stab(exp_idx,
-                                                                                                batch_size, traj_path)
+                                                                                                batch_size,
+                                                                                                traj_path,
+                                                                                                n_stab_samples)
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
     print('Std fid of the zero-one normalization: {}'.format(np.std(fid_all[0])))
     print('Acc fid of the zero-one normalization: {}'.format(acc_all[0]))
@@ -220,7 +223,9 @@ elif args.explainer == 'rationale':
     rationale_explainer.test(test_idx, batch_size, traj_path)
 
     sal_rationale_all, fid_all, stab_all, acc_all, mean_time = rationale_explainer.exp_fid_stab(exp_idx,
-                                                                                                batch_size, traj_path)
+                                                                                                batch_size,
+                                                                                                traj_path,
+                                                                                                n_stab_samples)
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
     print('Std fid of the zero-one normalization: {}'.format(np.std(fid_all[0])))
     print('Acc fid of the zero-one normalization: {}'.format(acc_all[0]))
@@ -277,7 +282,8 @@ elif args.explainer == 'dgp':
 
     sal_rationale_all, covar_all, fid_all, stab_all, acc_all, mean_time = dgp_explainer.exp_fid_stab(exp_idx,
                                                                                                      batch_size,
-                                                                                                     traj_path)
+                                                                                                     traj_path,
+                                                                                                     n_stab_samples)
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
     print('Std fid of the zero-one normalization: {}'.format(np.std(fid_all[0])))
     print('Acc fid of the zero-one normalization: {}'.format(acc_all[0]))
