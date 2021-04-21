@@ -59,8 +59,8 @@ The `atari_pong` contains the explanation pipeline, pretrained agents, and the e
 - Step 6: run our method and save/record the same things.
 - Step 7: Quantitative evaluation.
   - Approximation accuracy (precision, recall, f1).
-  - Fidelity w.r.t. the explanation model.
+  - Fidelity w.r.t. the explanation model: (In total four metrics (four methods of perturbing the input traj), each one computes three/one values in classification/regression. For classification, we compute the fidelity value of each traj, the prediction diff of each traj before/after perturbation, and the classification accuracy of the perturbed trajs. For regression, we compute the abs prediction diff of each traj before/after perturbation.
   - Fidelity w.r.t. the RL task. 
-  - Sensitivity/stablity 
-  - Efficiency/runtime.
-
+  - Sensitivity/stablity: two parameters number of samples used for compute stability (default as 10), eps (perturbation strength) set as (XX%) of the input obs value range.
+  - Efficiency/runtime: training and explanation runtime.
+  
