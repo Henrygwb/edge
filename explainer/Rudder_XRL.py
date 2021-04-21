@@ -380,7 +380,7 @@ class Rudder(object):
         print('Test MSE: {}'.format(mse / float(len(test_loader.dataset))))
         return mse, mae
 
-    def exp_fid_stab(self, exp_idx, batch_size, traj_path, task_type):
+    def exp_fid_stab(self, exp_idx, batch_size, traj_path, task_type, n_stab_sample):
         """
         return explanations, fidelity, stability, runtime.
         """
@@ -419,7 +419,7 @@ class Rudder(object):
                 fid_3, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 25)
                 fid_4, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 50)
 
-            stab = exp_stablity(obs, acts, rewards, self, sal_rudder)
+            stab = exp_stablity(obs, acts, rewards, self, sal_rudder, n_stab_sample)
             fid = np.concatenate((fid_1[None, ], fid_2[None, ], fid_3[None, ], fid_4[None, ]))
 
             if batch == 0:
