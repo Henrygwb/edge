@@ -676,13 +676,20 @@ class DGPXRL(object):
                 covar_all_all = np.concatenate((covar_all_all, cov[0][None, ...]))
                 covar_traj_all = np.concatenate((covar_traj_all, cov[1][None, ...]))
                 covar_step_all = np.concatenate((covar_step_all, cov[2][None, ...]))
-                abs_diff_all = np.concatenate((abs_diff_all, abs_diff))
+                abs_diff_all = np.concatenate((abs_diff_all, abs_diff), axis=1)
 
         mean_time = sum_time / exp_idx.shape[0]
         acc_1 = acc_1 / n_batch
         acc_2 = acc_2 / n_batch
         acc_3 = acc_3 / n_batch
         acc_4 = acc_4 / n_batch
+        print(sal_all.shape)
+        print(covar_all_all.shape)
+        print(covar_traj_all.shape)
+        print(covar_step_all.shape)
+        print(fid_all.shape)
+        print(stab_all.shape)
+        print(abs_diff_all.shape)
 
         return sal_all, (covar_all_all, covar_traj_all, covar_step_all), fid_all, stab_all, \
                [acc_1, acc_2, acc_3, acc_4], abs_diff_all, mean_time

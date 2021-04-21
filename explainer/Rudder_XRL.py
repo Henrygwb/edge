@@ -436,7 +436,7 @@ class Rudder(object):
                 sal_rudder_all = np.vstack((sal_rudder_all, sal_rudder))
                 fid_all = np.concatenate((fid_all, fid), axis=1)
                 stab_all = np.concatenate((stab_all, stab))
-                abs_diff_all = np.concatenate((abs_diff_all, abs_diff))
+                abs_diff_all = np.concatenate((abs_diff_all, abs_diff), axis=1)
         mean_time = sum_time/exp_idx.shape[0]
 
         return sal_rudder_all, fid_all, stab_all, abs_diff_all, mean_time

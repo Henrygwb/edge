@@ -1,6 +1,6 @@
 import os, sys
 sys.path.append('..')
-os.environ["CUDA_VISIBLE_DEVICES"] = "0, 3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,3"
 import torch
 import numpy as np
 import gym, argparse
@@ -22,8 +22,8 @@ args = parser.parse_args()
 env_name = 'Pong-v0'
 agent_path = 'agents/{}/'.format(env_name.lower())
 traj_path = 'trajs/' + env_name
-traj_path = None
-num_traj = 20000
+# traj_path = None
+num_traj = 50000
 max_ep_len = 200
 
 if traj_path is None:
@@ -41,30 +41,31 @@ if traj_path is None:
 # Get the shared parameters, prepare training/testing data.
 num_class = 2
 seq_len = int(np.load('trajs/' + env_name + '_max_length.npy'))
+if seq_len > max_ep_len: seq_len = max_ep_len
 input_dim = 80
 n_action = 7
 len_diff = max_ep_len - seq_len
-if len_diff < 0: len_diff = 0
-total_data_idx = np.arange(int(np.load('trajs/' + env_name + '_num_traj.npy')))
+total_data_idx = np.arange(30)# np.arange(int(np.load('trajs/' + env_name + '_num_traj.npy')))
 train_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0]*0.7):, ]
-exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.1), ]
+exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.5), ]
 
 hiddens = [4]
 encoder_type = 'CNN'
 rnn_cell_type = 'GRU'
-n_epoch = 200
-batch_size = 40
+n_epoch = 2
+batch_size = 4
 save_path = 'exp_model_results/'
 likelihood_type = 'classification'
-n_stab_samples = 10
+n_stab_samples = 1
 
 if args.explainer == 'value':
     # Explainer 1 - Value function.
     values = []
-    n_batch = int(exp_idx.shape[0]/batch_size)+1
+    n_batch = int(exp_idx.shape[0]/batch_size)
+    
     for batch in range(n_batch):
-        for idx in exp_idx[batch*batch_size:min((batch+1)*batch_size, exp_idx.shape[0]), ]:
+        for idx in exp_idx[batch*batch_size:(batch+1)*batch_size, ]:
             value_tmp = np.load(traj_path + '_traj_' + str(idx) + '.npz')['values']
             values.append(value_tmp[len_diff:])
 
@@ -142,7 +143,7 @@ elif args.explainer == 'saliency':
             if back2rnn:
                 np.savez_compressed(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz',
                                     sal=sal_saliency_all, fid=fid_all, stab=stab_all, time=mean_time, acc=acc_all,
-                                    abs_diff_all=abs_diff_all)
+                                    abs_diff=abs_diff_all)
             else:
                 np.savez_compressed(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz',
                                     sal=sal_saliency_all, fid=fid_all, stab=stab_all, time=mean_time, acc=acc_all,

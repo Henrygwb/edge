@@ -885,7 +885,7 @@ class RnnSaliency(object):
                 sal_all = np.vstack((sal_all, sal))
                 fid_all = np.concatenate((fid_all, fid), axis=1)
                 stab_all = np.concatenate((stab_all, stab))
-                abs_diff_all = np.concatenate((abs_diff_all, abs_diff))
+                abs_diff_all = np.concatenate((abs_diff_all, abs_diff), axis=1)
 
         mean_time = sum_time / exp_idx.shape[0]
         acc_1 = acc_1 / n_batch
