@@ -79,7 +79,7 @@ elif args.explainer == 'rudder':
     rudder_explainer = Rudder(seq_len=seq_len, len_diff=len_diff, input_dim=input_dim, hiddens=hiddens,
                               n_action=n_action, encoder_type=encoder_type)
     name = 'rudder_' + encoder_type + '_' + rnn_cell_type
-    rudder_explainer.train(train_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
+    rudder_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
     rudder_explainer.test(test_idx, batch_size, traj_path)
     rudder_explainer.load(save_path+name+'_model.data')
     rudder_explainer.test(test_idx, batch_size, traj_path)
@@ -129,7 +129,7 @@ elif args.explainer == 'saliency':
                                      use_input_attention=use_input_attention, normalize=False)
     name = 'saliency_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + str(use_input_attention)
 
-    saliency_explainer.train(train_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
+    saliency_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
     saliency_explainer.test(test_idx, batch_size, traj_path)
     saliency_explainer.load(save_path+name+'_model.data')
     saliency_explainer.test(test_idx, batch_size, traj_path)
@@ -215,7 +215,7 @@ elif args.explainer == 'attention':
                                   encoder_type=encoder_type, num_class=2, attention_type=attention_type,
                                   normalize=False)
 
-    attention_explainer.train(train_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
+    attention_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
     attention_explainer.test(test_idx, batch_size, traj_path)
     attention_explainer.load(save_path+name+'_model.data')
     attention_explainer.test(test_idx, batch_size, traj_path)
@@ -268,7 +268,7 @@ elif args.explainer == 'rationale':
     rationale_explainer = RationaleNet(seq_len, len_diff, input_dim, likelihood_type, hiddens, n_action,
                                        encoder_type=encoder_type, num_class=2, normalize=False)
 
-    rationale_explainer.train(train_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
+    rationale_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
     rationale_explainer.test(test_idx, batch_size, traj_path)
     rationale_explainer.load(save_path+name+'_model.data')
     rationale_explainer.test(test_idx, batch_size, traj_path)
@@ -339,7 +339,7 @@ elif args.explainer == 'dgp':
            + str(using_ksi) + '_' + str(using_ciq) + '_' + str(using_sor) + '_' \
            + str(using_OrthogonallyDecouple)
 
-    dgp_explainer.train(train_idx, batch_size, traj_path, save_path=save_path+name+'_model.data')
+    dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, save_path=save_path+name+'_model.data')
     dgp_explainer.test(test_idx, batch_size, traj_path)
     dgp_explainer.load(save_path+name+'_model.data')
     dgp_explainer.test(test_idx, batch_size, traj_path)
