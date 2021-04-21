@@ -41,14 +41,13 @@ if traj_path is None:
 # Get the shared parameters, prepare training/testing data.
 num_class = 2
 seq_len = int(np.load('trajs/' + env_name + '_max_length.npy'))
-
 input_dim = 80
 n_action = 7
 len_diff = max_ep_len - seq_len
 total_data_idx = np.arange(int(np.load('trajs/' + env_name + '_num_traj.npy'))) # np.arange(30)
 train_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0]*0.7):, ]
-exp_idx = total_data_idx[0:int(total_data_idx.shape[0])*0.1, ]
+exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.1), ]
 
 hiddens = [4]
 encoder_type = 'CNN'
@@ -69,7 +68,7 @@ if args.explainer == 'value':
             value_tmp = np.load(traj_path + '_traj_' + str(idx) + '.npz')['values']
             values.append(value_tmp[len_diff:])
 
-    values = np.array(values) 
+    values = np.array(values)
     sal_value = (values - np.min(values, axis=1)[:, None]) / \
                 (np.max(values, axis=1)[:, None] - np.min(values, axis=1)[:, None] + 1e-16)
     print(sal_value.shape)
