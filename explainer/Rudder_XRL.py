@@ -108,11 +108,12 @@ class Rudder(object):
         else:
             n_batch = int(train_idx.shape[0] / batch_size) + 1
 
-        for _ in tqdm.tqdm(range(1, n_epoch + 1)):
+        for epoch in range(1, n_epoch + 1):
+            print('{} out of {} epochs.'.format(epoch, n_epoch+1))
             mse = 0
             mae = 0
             loss_sum = 0
-            for batch in range(n_batch):
+            for batch in tqdm.tqdm(range(n_batch)):
                 batch_obs = []
                 batch_acts = []
                 batch_rewards = []
