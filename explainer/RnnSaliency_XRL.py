@@ -256,8 +256,9 @@ class RnnSaliency(object):
             else:
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
-            if torch.cuda.is_available():
-                obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            # if torch.cuda.is_available():
+            #     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+
             preds = self.model(obs, acts)[:, -1, :]
             preds = self.likelihood(preds)
 
