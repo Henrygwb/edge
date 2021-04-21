@@ -145,7 +145,7 @@ class Rudder(object):
 
             print('Training loss: {}'.format(mae / float(train_idx.shape[0])))
             print('Training MAE: {}'.format(mae / float(train_idx.shape[0])))
-            print('Traing MSE: {}'.format(mse / float(train_idx.shape[0])))
+            print('Training MSE: {}'.format(mse / float(train_idx.shape[0])))
             scheduler.step()
             self.test(test_idx, batch_size, traj_path)
             self.model.train()
