@@ -149,8 +149,8 @@ class RnnAttn(object):
                 else:
                     rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
-                # if torch.cuda.is_available():
-                #     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+                if torch.cuda.is_available():
+                    obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
 
                 optimizer.zero_grad()
                 output = self.model(obs, acts)
@@ -277,8 +277,8 @@ class RnnAttn(object):
             else:
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
-            if torch.cuda.is_available():
-                obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            # if torch.cuda.is_available():
+            #     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
             preds = self.model(obs, acts)
             _, preds = self.attention(preds)
             preds = self.likelihood(preds)
