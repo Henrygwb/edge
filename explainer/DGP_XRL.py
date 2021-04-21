@@ -188,9 +188,10 @@ class DGPXRL(object):
         self.likelihood.load_state_dict(likelihood_dict)
         return self.model, self.likelihood
 
-    def train(self, train_idx, batch_size, traj_path, save_path=None, likelihood_sample_size=8):
+    def train(self, train_idx, test_idx, batch_size, traj_path, save_path=None, likelihood_sample_size=8):
         """
         :param train_idx: training traj index.
+        :param test_idx: testing traj index.
         :param batch_size: training batch size.
         :param traj_path: training traj path.
         :param save_path: model save path.
@@ -282,6 +283,7 @@ class DGPXRL(object):
                         print('Train MSE: {}'.format(mse / float(self.train_len)))
 
             self.scheduler.step()
+            self.test(test_idx, batch_size, traj_path)
 
         if save_path:
             self.save(save_path)

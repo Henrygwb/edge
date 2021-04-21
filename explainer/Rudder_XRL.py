@@ -78,10 +78,11 @@ class Rudder(object):
         self.model.load_state_dict(model_dict)
         return self.model, self.fc_out
 
-    def train(self, train_idx, batch_size, n_epoch, traj_path, lr=0.01, gamma=0.1, optimizer_choice='adam',
+    def train(self, train_idx, test_idx, batch_size, n_epoch, traj_path, lr=0.01, gamma=0.1, optimizer_choice='adam',
               save_path=None):
         """
         :param train_idx: training traj index.
+        :param test_idx: testing traj index.
         :param batch_size: training batch size.
         :param n_epoch: number of training epoch.
         :param traj_path: training traj path.
@@ -146,6 +147,7 @@ class Rudder(object):
             print('Training MAE: {}'.format(mae / float(train_idx.shape[0])))
             print('Traing MSE: {}'.format(mse / float(train_idx.shape[0])))
             scheduler.step()
+            self.test(test_idx, batch_size, traj_path)
 
         if save_path:
             self.save(save_path)
