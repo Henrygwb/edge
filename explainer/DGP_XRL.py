@@ -353,7 +353,12 @@ class DGPXRL(object):
         rewards_all = []
 
         with torch.no_grad(), gpytorch.settings.num_likelihood_samples(likelihood_sample_size):
-            n_batch = int(test_idx.shape[0] / batch_size) + 1
+
+            if test_idx.shape[0] % batch_size == 0:
+                n_batch = int(test_idx.shape[0] / batch_size)
+            else:
+                n_batch = int(test_idx.shape[0] / batch_size) + 1
+
             for batch in range(n_batch):
                 batch_obs = []
                 batch_acts = []
