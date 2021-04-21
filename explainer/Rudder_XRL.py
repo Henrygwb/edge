@@ -406,7 +406,7 @@ class Rudder(object):
             start = timeit.default_timer()
             sal_rudder = self.get_explanations_by_tensor(obs, acts, rewards)
             stop = timeit.default_timer()
-            print('Rudder explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
+            # print('Rudder explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
             sum_time += (stop - start)
             if task_type == 'classification':
                 _, fid_1 = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder)

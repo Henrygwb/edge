@@ -850,7 +850,7 @@ class RnnSaliency(object):
             sal = self.get_explanations_by_tensor(obs, acts, rewards, saliency_method=saliency_method,
                                                   back2rnn=back2rnn, n_samples=n_samples)
             stop = timeit.default_timer()
-            print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
+            # print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
             sum_time += (stop - start)
             if self.likelihood_type == 'classification':
                 fid_1, acc_1_temp = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)

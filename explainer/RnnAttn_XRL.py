@@ -471,8 +471,7 @@ class RnnAttn(object):
         saliency, _ = self.attention(output)
         saliency = saliency.squeeze(-1)
         saliency = saliency.cpu().detach().numpy()
-         
-        
+
         if normalize:
             saliency = (saliency - np.min(saliency, axis=1)[:, None]) / \
                        (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
@@ -511,7 +510,7 @@ class RnnAttn(object):
             start = timeit.default_timer()
             sal = self.get_explanations_by_tensor(obs, acts, rewards)
             stop = timeit.default_timer()
-            print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
+            # print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
             sum_time += (stop - start)
             if self.likelihood_type == 'classification':
                 fid_1, acc_1_temp = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
