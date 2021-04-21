@@ -52,8 +52,8 @@ def exp_fid2nn_topk(obs, acts, rewards, explainer, saliency, num_fea):
         return np.abs(preds_sal-preds_orin)
 
 
-def exp_stablity(obs, acts, rewards, explainer, saliency, num_sample=5, eps=10):
-
+def exp_stablity(obs, acts, rewards, explainer, saliency, num_sample=5, eps=1):
+    # eps: perturbation strength, in pong game, the input value range is (0, 1), add noise range between (0, 1).
     def get_l2_diff(x, y):
         diff_square = np.square((x - y))
         if len(x.shape) > 2:
