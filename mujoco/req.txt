@@ -1,0 +1,3 @@
+gym==0.15.4
+mujoco-py==0.5.7
+gym_compete @ git+https://github.com/HumanCompatibleAI/multiagent-competition.git@3a3f9dc
