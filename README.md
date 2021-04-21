@@ -24,7 +24,7 @@ Key parameters (the instruction of most parameters can be found in the inline co
 Key parameters for each explainer:
 - `Rudder_XRL.py`: the commen parameters discussed above (Rudder does not distinguish classification and regression).    
 - `RnnSaliency_XRL.py`: set `rnn_cell_type='LSTM'` and `use_input_attention=True` (These two options are only used for this explainer).
-- `RnnAttn_XRL.py`: `attention_type ='tanch'` as default.
+- `RnnAttn_XRL.py`: `attention_type ='tanh'` as default.
 - `RationaleNet_XRL.py`: the commen parameters discussed above.
 - `DGP_XRL.py`: many GP strategy options, use the default choice in `pong.py` or turn off all the options. 
 
