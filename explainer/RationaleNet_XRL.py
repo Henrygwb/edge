@@ -332,7 +332,7 @@ class RationaleNet(object):
 
         if normalize:
             saliency_all = (saliency_all - np.min(saliency_all, axis=1)[:, None]) \
-                           / (np.max(saliency_all, axis=1)[:, None] - np.min(saliency_all, axis=1)[:, None])
+                           / (np.max(saliency_all, axis=1)[:, None] - np.min(saliency_all, axis=1)[:, None] + 1e-16)
 
         return saliency_all
 
@@ -467,7 +467,7 @@ class RationaleNet(object):
 
         if normalize:
             saliency = (saliency - np.min(saliency, axis=1)[:, None]) \
-                       / (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
+                       / (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None] + 1e-16)
 
         return saliency
 
@@ -506,10 +506,10 @@ class RationaleNet(object):
             # print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
             sum_time += (stop - start)
             if self.likelihood_type == 'classification':
-                fid_1, acc_1_temp = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
-                fid_2, acc_2_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
-                fid_3, acc_3_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
-                fid_4, acc_4_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
+                fid_1, acc_1_temp, abs_diff_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
+                fid_2, acc_2_temp, abs_diff_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
+                fid_3, acc_3_temp, abs_diff_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
+                fid_4, acc_4_temp, abs_diff_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
                 acc_1 += acc_1_temp
                 acc_2 += acc_2_temp
                 acc_3 += acc_3_temp
@@ -523,18 +523,27 @@ class RationaleNet(object):
             stab = exp_stablity(obs, acts, rewards, self, sal, n_stab_samples)
             fid = np.concatenate((fid_1[None,], fid_2[None,], fid_3[None,], fid_4[None,]))
 
+            if self.likelihood_type == 'classification':
+                abs_diff = np.concatenate((abs_diff_1[None, ], abs_diff_2[None, ], abs_diff_3[None, ],
+                                           abs_diff_4[None, ]))
+            else:
+                abs_diff = fid
+
             if batch == 0:
                 sal_all = sal
                 fid_all = fid
                 stab_all = stab
+                abs_diff_all = abs_diff
             else:
                 sal_all = np.vstack((sal_all, sal))
                 fid_all = np.concatenate((fid_all, fid), axis=1)
                 stab_all = np.concatenate((stab_all, stab))
+                abs_diff_all = np.concatenate((abs_diff_all, abs_diff))
+
         mean_time = sum_time / exp_idx.shape[0]
         acc_1 = acc_1 / n_batch
         acc_2 = acc_2 / n_batch
         acc_3 = acc_3 / n_batch
         acc_4 = acc_4 / n_batch
 
-        return sal_all, fid_all, stab_all, [acc_1, acc_2, acc_3, acc_4], mean_time
+        return sal_all, fid_all, stab_all, [acc_1, acc_2, acc_3, acc_4], abs_diff_all, mean_time

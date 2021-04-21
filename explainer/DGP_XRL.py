@@ -466,7 +466,7 @@ class DGPXRL(object):
 
         if normalize:
             saliency_all = (saliency_all - np.min(saliency_all, axis=1)[:, None]) \
-                         / (np.max(saliency_all, axis=1)[:, None] - np.min(saliency_all, axis=1)[:, None])
+                         / (np.max(saliency_all, axis=1)[:, None] - np.min(saliency_all, axis=1)[:, None] + 1e-16)
 
         return saliency_all, (covar_all_all, covar_traj_all, covar_step_all)
 
@@ -598,7 +598,7 @@ class DGPXRL(object):
                 importance = np.squeeze(importance, -1)
         if normalize:
             importance = (importance - np.min(importance, axis=1)[:, None]) \
-                         / (np.max(importance, axis=1)[:, None] - np.min(importance, axis=1)[:, None])
+                         / (np.max(importance, axis=1)[:, None] - np.min(importance, axis=1)[:, None] + 1e-16)
 
         return importance, (covar_all.cpu().detach().numpy(), covar_traj.cpu().detach().numpy(),
                             covar_step.cpu().detach().numpy())
@@ -638,10 +638,10 @@ class DGPXRL(object):
             # print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
             sum_time += (stop - start)
             if self.likelihood_type == 'classification':
-                fid_1, acc_1_temp = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
-                fid_2, acc_2_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
-                fid_3, acc_3_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
-                fid_4, acc_4_temp = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
+                fid_1, acc_1_temp, abs_diff_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
+                fid_2, acc_2_temp, abs_diff_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
+                fid_3, acc_3_temp, abs_diff_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
+                fid_4, acc_4_temp, abs_diff_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
                 acc_1 += acc_1_temp
                 acc_2 += acc_2_temp
                 acc_3 += acc_3_temp
@@ -655,6 +655,12 @@ class DGPXRL(object):
             stab = self.exp_stablity(obs, acts, rewards, sal, n_stab_samples)
             fid = np.concatenate((fid_1[None,], fid_2[None,], fid_3[None,], fid_4[None,]))
 
+            if self.likelihood_type == 'classification':
+                abs_diff = np.concatenate((abs_diff_1[None, ], abs_diff_2[None, ], abs_diff_3[None, ],
+                                           abs_diff_4[None, ]))
+            else:
+                abs_diff = fid
+
             if batch == 0:
                 sal_all = sal
                 fid_all = fid
@@ -662,6 +668,7 @@ class DGPXRL(object):
                 covar_all_all = cov[0][None, ...]
                 covar_traj_all = cov[1][None, ...]
                 covar_step_all = cov[2][None, ...]
+                abs_diff_all = abs_diff
             else:
                 sal_all = np.vstack((sal_all, sal))
                 fid_all = np.concatenate((fid_all, fid), axis=1)
@@ -669,6 +676,7 @@ class DGPXRL(object):
                 covar_all_all = np.concatenate((covar_all_all, cov[0][None, ...]))
                 covar_traj_all = np.concatenate((covar_traj_all, cov[1][None, ...]))
                 covar_step_all = np.concatenate((covar_step_all, cov[2][None, ...]))
+                abs_diff_all = np.concatenate((abs_diff_all, abs_diff))
 
         mean_time = sum_time / exp_idx.shape[0]
         acc_1 = acc_1 / n_batch
@@ -677,7 +685,7 @@ class DGPXRL(object):
         acc_4 = acc_4 / n_batch
 
         return sal_all, (covar_all_all, covar_traj_all, covar_step_all), fid_all, stab_all, \
-               [acc_1, acc_2, acc_3, acc_4], mean_time
+               [acc_1, acc_2, acc_3, acc_4], abs_diff_all, mean_time
 
     def exp_stablity(self, obs, acts, rewards, saliency, num_sample=5, eps=10):
         def get_l2_diff(x, y):

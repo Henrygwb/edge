@@ -10,6 +10,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 def exp_fid2nn_zero_one(obs, acts, rewards, explainer, saliency):
     obs.requires_grad = False
     acts.requires_grad = False
+    preds_orin = explainer.predict(obs, acts, rewards)
 
     if type(saliency) == np.ndarray:
         saliency = torch.tensor(saliency, dtype=torch.float32)
@@ -21,9 +22,8 @@ def exp_fid2nn_zero_one(obs, acts, rewards, explainer, saliency):
 
     if explainer.likelihood_type == 'classification':
         preds_sal, acc = explainer.predict(saliency * obs, acts, rewards)
-        return -np.log(preds_sal), acc
+        return -np.log(preds_sal), acc, np.abs(preds_sal-preds_orin)
     else:
-        preds_orin = explainer.predict(obs, acts, rewards)
         preds_sal = explainer.predict(saliency * obs, acts, rewards)
         return np.abs(preds_sal-preds_orin)
 
@@ -46,7 +46,7 @@ def exp_fid2nn_topk(obs, acts, rewards, explainer, saliency, num_fea):
 
     if explainer.likelihood_type == 'classification':
         preds_sal, acc = explainer.predict(obs, acts, rewards)
-        return -np.log(preds_sal), acc
+        return -np.log(preds_sal), acc, np.abs(preds_sal-preds_orin)
     else:
         preds_sal = explainer.predict(obs, acts, rewards)
         return np.abs(preds_sal-preds_orin)

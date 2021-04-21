@@ -269,7 +269,7 @@ class Rudder(object):
 
         if normalize:
             saliency = (saliency - np.min(saliency, axis=1)[:, None]) / \
-                       (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
+                       (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None] + 1e-16)
 
         return saliency
 
@@ -306,7 +306,7 @@ class Rudder(object):
 
         if normalize:
             saliency = (saliency - np.min(saliency, axis=1)[:, None]) / \
-                       (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None])
+                       (np.max(saliency, axis=1)[:, None] - np.min(saliency, axis=1)[:, None] + 1e-16)
 
         return saliency
 
@@ -409,10 +409,10 @@ class Rudder(object):
             # print('Rudder explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
             sum_time += (stop - start)
             if task_type == 'classification':
-                _, fid_1 = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder)
-                _, fid_2 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 10)
-                _, fid_3 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 25)
-                _, fid_4 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 50)
+                abs_diff_1, fid_1 = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder)
+                abs_diff_2, fid_2 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 10)
+                abs_diff_3, fid_3 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 25)
+                abs_diff_4, fid_4 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 50)
             else:
                 fid_1, _ = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder)
                 fid_2, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 10)
@@ -421,18 +421,25 @@ class Rudder(object):
 
             stab = exp_stablity(obs, acts, rewards, self, sal_rudder, n_stab_sample)
             fid = np.concatenate((fid_1[None, ], fid_2[None, ], fid_3[None, ], fid_4[None, ]))
+            if task_type == 'classification':
+                abs_diff = np.concatenate((abs_diff_1[None, ], abs_diff_2[None, ], abs_diff_3[None, ],
+                                           abs_diff_4[None, ]))
+            else:
+                abs_diff = fid
 
             if batch == 0:
                 sal_rudder_all = sal_rudder
                 fid_all = fid
                 stab_all = stab
+                abs_diff_all = abs_diff
             else:
                 sal_rudder_all = np.vstack((sal_rudder_all, sal_rudder))
                 fid_all = np.concatenate((fid_all, fid), axis=1)
                 stab_all = np.concatenate((stab_all, stab))
+                abs_diff_all = np.concatenate((abs_diff_all, abs_diff))
         mean_time = sum_time/exp_idx.shape[0]
 
-        return sal_rudder_all, fid_all, stab_all, mean_time
+        return sal_rudder_all, fid_all, stab_all, abs_diff_all, mean_time
 
     @staticmethod
     def exp_fid2nn_zero_one(obs, acts, rewards, explainer, saliency):
