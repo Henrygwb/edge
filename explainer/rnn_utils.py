@@ -439,7 +439,7 @@ class RationaleNetGenerator(nn.Module):
         noise.add_(1e-9).log_().neg_()
         noise.add_(1e-9).log_().neg_()
         noise = torch.autograd.Variable(noise)
-        if cuda:
+        if input.is_cuda:
             noise = noise.cuda()
         x = (input + noise) / temperature # [B, L, 2]
         x = F.softmax(x.view(-1, x.size()[-1]), dim=-1) # [B*L, 2]

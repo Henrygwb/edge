@@ -298,10 +298,6 @@ class DGPXRL(object):
         :param rewards: trajectory rewards.
         :return: predicted outputs.
         """
-        if torch.cuda.is_available():
-            self.model = self.model.cuda()
-            self.likelihood = self.likelihood.cuda()
- 
         self.model.eval()
         self.likelihood.eval()
 
