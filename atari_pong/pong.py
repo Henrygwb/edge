@@ -22,8 +22,8 @@ args = parser.parse_args()
 env_name = 'Pong-v0'
 agent_path = 'agents/{}/'.format(env_name.lower())
 traj_path = 'trajs/' + env_name
-# traj_path = None
-num_traj = 30
+traj_path = None
+num_traj = 20000
 max_ep_len = 200
 
 if traj_path is None:
@@ -47,13 +47,13 @@ len_diff = max_ep_len - seq_len
 total_data_idx = np.arange(int(np.load('trajs/' + env_name + '_num_traj.npy')))
 train_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0]*0.7):, ]
-exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.6), ]
+exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.1), ]
 
 hiddens = [4]
 encoder_type = 'CNN'
 rnn_cell_type = 'GRU'
-n_epoch = 2
-batch_size = 4
+n_epoch = 200
+batch_size = 40
 save_path = 'exp_model_results/'
 likelihood_type = 'classification'
 
@@ -118,7 +118,7 @@ elif args.explainer == 'saliency':
     for back2rnn in [True, False]:
         for saliency_methond in all_methods:
             sal_saliency_all, fid_all, stab_all, acc_all, mean_time = saliency_explainer.exp_fid_stab(
-                exp_idx, batch_size, traj_path, back2rnn, saliency_methond, n_samples=2, n_stab_samples=1)
+                exp_idx, batch_size, traj_path, back2rnn, saliency_methond, n_samples=15, n_stab_samples=5)
             fid_all_methods.append(np.mean(fid_all))
             if back2rnn:
                 np.savez_compressed(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz',
@@ -176,8 +176,8 @@ elif args.explainer == 'attention':
                                   encoder_type=encoder_type, num_class=2, attention_type=attention_type,
                                   normalize=False)
 
-    #attention_explainer.train(train_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
-    #attention_explainer.test(test_idx, batch_size, traj_path)
+    attention_explainer.train(train_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
+    attention_explainer.test(test_idx, batch_size, traj_path)
     attention_explainer.load(save_path+name+'_model.data')
     attention_explainer.test(test_idx, batch_size, traj_path)
 
