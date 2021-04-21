@@ -51,7 +51,7 @@ def rollout(model, env, num_traj, max_ep_len=1e3, save_path=None, render=False):
         episode_length, epr, eploss, done = 0, 0, 0, False  # bookkeeping
         hx, cx = Variable(torch.zeros(1, 256)), Variable(torch.zeros(1, 256))
 
-        while not done and episode_length <= max_ep_len:
+        while not done and episode_length < max_ep_len:
             value, logit, (hx, cx) = model((Variable(state.view(1, 1, 80, 80)), (hx, cx)))
             hx, cx = Variable(hx.data), Variable(cx.data)
             prob = F.softmax(logit, dim=-1)
