@@ -9,7 +9,7 @@ The proposed explanation model and the four baselines are in `explainer`.
 - `RnnSaliency_XRL.py`: RNN + saliency methods. 
 - `Rudder_XRL.py`: reward distribution as explanation.
 Each object has the following functions:
-- `train()`: train the approximation model to model the correlation between the input trajectories and the final rewards, it will display the training accuracy.
+- `train()`: train the approximation model to model the correlation between the input trajectories and the final rewards, it will display the training accuracy. Note it takes as input a weight parameter (tensor), which are the class weights (defalut as None, used for class imbalance).
 - `test()`: test the trained model accuracy on the test trajectories.
 - `get_explanations`: compute the time step importances for the input trajectories.
 - `save`: save the trained model.
