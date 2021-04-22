@@ -61,6 +61,6 @@ The `atari_pong` contains the explanation pipeline, pretrained agents, and the e
   - Approximation accuracy (precision, recall, f1).
   - Fidelity w.r.t. the explanation model: (In total four metrics (four methods of perturbing the input traj), each one computes three/one values in classification/regression. For classification, we compute the fidelity value of each traj, the prediction diff of each traj before/after perturbation, and the classification accuracy of the perturbed trajs. For regression, we compute the abs prediction diff of each traj before/after perturbation.
   - Fidelity w.r.t. the RL task. 
-  - Sensitivity/stablity: two parameters number of samples used for compute stability (default as 10), eps (perturbation strength) set as (XX%) of the input obs value range.
+  - Sensitivity/stablity: two parameters number of samples used for compute stability (default as 10), eps (perturbation strength) adjust it to meantain the noise value range as about (5%) of the input obs value range where the noise value range is (0, eps). 
   - Efficiency/runtime: training and explanation runtime.
   
