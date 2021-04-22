@@ -66,7 +66,7 @@ class RationaleNet(object):
         return 0
 
     def load(self, load_path):
-        dicts = torch.load(load_path)
+        dicts = torch.load(load_path, map_location=torch.device('cpu'))
         encoder_dict = dicts['encoder']
         generator_dict = dicts['generator']
         likelihood_dict = dicts['likelihood']
@@ -492,7 +492,7 @@ class RationaleNet(object):
 
         return saliency
 
-    def exp_fid_stab(self, exp_idx, batch_size, traj_path, n_stab_samples=5):
+    def exp_fid_stab(self, exp_idx, batch_size, traj_path, n_stab_samples=5, eps=0.05):
 
         n_batch = int(exp_idx.shape[0] / batch_size)
         sum_time = 0
@@ -526,22 +526,26 @@ class RationaleNet(object):
             stop = timeit.default_timer()
             # print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
             sum_time += (stop - start)
+            preds_orin = self.predict(obs, acts, rewards)
             if self.likelihood_type == 'classification':
-                fid_1, acc_1_temp, abs_diff_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
-                fid_2, acc_2_temp, abs_diff_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
-                fid_3, acc_3_temp, abs_diff_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
-                fid_4, acc_4_temp, abs_diff_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
+                fid_1, acc_1_temp, abs_diff_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal, preds_orin)
+                fid_2, acc_2_temp, abs_diff_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin,
+                                                                int(obs.shape[1] * 0.05))
+                fid_3, acc_3_temp, abs_diff_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin,
+                                                                int(obs.shape[1] * 0.15))
+                fid_4, acc_4_temp, abs_diff_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin,
+                                                                int(obs.shape[1] * 0.25))
                 acc_1 += acc_1_temp
                 acc_2 += acc_2_temp
                 acc_3 += acc_3_temp
                 acc_4 += acc_4_temp
             else:
-                fid_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
-                fid_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
-                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
-                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
+                fid_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal, preds_orin)
+                fid_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1] * 0.05))
+                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1] * 0.25))
+                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1] * 0.5))
 
-            stab = exp_stablity(obs, acts, rewards, self, sal, n_stab_samples)
+            stab = exp_stablity(obs, acts, rewards, self, sal, n_stab_samples, eps)
             fid = np.concatenate((fid_1[None,], fid_2[None,], fid_3[None,], fid_4[None,]))
 
             if self.likelihood_type == 'classification':

@@ -71,7 +71,7 @@ class Rudder(object):
         return 0
 
     def load(self, load_path):
-        dicts = torch.load(load_path)
+        dicts = torch.load(load_path, map_location=torch.device('cpu'))
         model_dict = dicts['model']
         fc_dict = dicts['fc']
         self.fc_out.load_state_dict(fc_dict)
@@ -395,7 +395,7 @@ class Rudder(object):
         print('Test MSE: {}'.format(mse / float(len(test_loader.dataset))))
         return mse, mae
 
-    def exp_fid_stab(self, exp_idx, batch_size, traj_path, task_type, n_stab_sample):
+    def exp_fid_stab(self, exp_idx, batch_size, traj_path, task_type, n_stab_sample, eps=0.05):
         """
         return explanations, fidelity, stability, runtime.
         """
@@ -423,18 +423,19 @@ class Rudder(object):
             stop = timeit.default_timer()
             # print('Rudder explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
             sum_time += (stop - start)
+            preds_orin = self.predict(obs, acts, rewards)
             if task_type == 'classification':
-                abs_diff_1, fid_1 = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder)
-                abs_diff_2, fid_2 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 10)
-                abs_diff_3, fid_3 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 25)
-                abs_diff_4, fid_4 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 50)
+                abs_diff_1, fid_1 = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder, preds_orin)
+                abs_diff_2, fid_2 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.05))
+                abs_diff_3, fid_3 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.15))
+                abs_diff_4, fid_4 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.25))
             else:
-                fid_1, _ = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder)
-                fid_2, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 10)
-                fid_3, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 25)
-                fid_4, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, 50)
+                fid_1, _ = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder, preds_orin)
+                fid_2, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.05))
+                fid_3, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.15))
+                fid_4, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.25))
 
-            stab = exp_stablity(obs, acts, rewards, self, sal_rudder, n_stab_sample)
+            stab = exp_stablity(obs, acts, rewards, self, sal_rudder, n_stab_sample, eps)
             fid = np.concatenate((fid_1[None, ], fid_2[None, ], fid_3[None, ], fid_4[None, ]))
             if task_type == 'classification':
                 abs_diff = np.concatenate((abs_diff_1[None, ], abs_diff_2[None, ], abs_diff_3[None, ],
@@ -457,7 +458,7 @@ class Rudder(object):
         return sal_rudder_all, fid_all, stab_all, abs_diff_all, mean_time
 
     @staticmethod
-    def exp_fid2nn_zero_one(obs, acts, rewards, explainer, saliency):
+    def exp_fid2nn_zero_one(obs, acts, rewards, explainer, saliency, preds_orin):
         obs.requires_grad = False
         acts.requires_grad = False
 
@@ -469,7 +470,6 @@ class Rudder(object):
         else:
             saliency = saliency[:, :, None]
 
-        preds_orin = explainer.predict(obs, acts, rewards)
         preds_sal = explainer.predict(saliency * obs, acts, rewards)
         abs_diff = np.abs(preds_sal-preds_orin)
         rewards = rewards.cpu().detach().numpy()
@@ -478,11 +478,9 @@ class Rudder(object):
         return abs_diff, -np.log(preds_sal)
 
     @staticmethod
-    def exp_fid2nn_topk(obs, acts, rewards, explainer, saliency, num_fea):
+    def exp_fid2nn_topk(obs, acts, rewards, explainer, saliency, preds_orin, num_fea):
         obs.requires_grad = False
         acts.requires_grad = False
-
-        preds_orin = explainer.predict(obs, acts, rewards)
 
         if type(saliency) == torch.Tensor:
             saliency = saliency.cpu().detach().numpy()
@@ -490,11 +488,12 @@ class Rudder(object):
         importance_id_sorted = np.argsort(saliency, axis=1)[:, ::-1] # high to low.
         nonimportance_id = importance_id_sorted[:, num_fea:]
         nonimportance_id = nonimportance_id.copy()
-        for i in range(obs.shape[0]):
-            obs[i, nonimportance_id[i], ...] = 0
-            acts[i, nonimportance_id[i], ...] = 0
 
-        preds_sal = explainer.predict(obs, acts, rewards)
+        mask = torch.ones_like(acts, dtype=torch.long)
+        for j in range(acts.shape[0]):
+            mask[j, nonimportance_id[j,]] = 0
+
+        preds_sal = explainer.predict(obs * mask[:, :, None, None, None], acts * mask, rewards)
         abs_diff = np.abs(preds_sal-preds_orin)
         rewards = rewards.cpu().detach().numpy()
         preds_sal = np.abs(preds_sal - rewards)

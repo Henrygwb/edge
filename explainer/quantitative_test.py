@@ -7,11 +7,10 @@ from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
 
-def exp_fid2nn_zero_one(obs, acts, rewards, explainer, saliency):
+def exp_fid2nn_zero_one(obs, acts, rewards, explainer, saliency, preds_orin):
     obs.requires_grad = False
     acts.requires_grad = False
-    preds_orin = explainer.predict(obs, acts, rewards)
-  
+
     if type(saliency) == np.ndarray:
         saliency = torch.tensor(saliency, dtype=torch.float32)
 
@@ -28,11 +27,9 @@ def exp_fid2nn_zero_one(obs, acts, rewards, explainer, saliency):
         return np.abs(preds_sal-preds_orin)
 
 
-def exp_fid2nn_topk(obs, acts, rewards, explainer, saliency, num_fea):
+def exp_fid2nn_topk(obs, acts, rewards, explainer, saliency, preds_orin, num_fea):
     obs.requires_grad = False
     acts.requires_grad = False
-
-    preds_orin = explainer.predict(obs, acts, rewards)
 
     if type(saliency) == torch.Tensor:
         saliency = saliency.cpu().detach().numpy()
@@ -40,19 +37,19 @@ def exp_fid2nn_topk(obs, acts, rewards, explainer, saliency, num_fea):
     importance_id_sorted = np.argsort(saliency, axis=1)[:, ::-1] # high to low.
     nonimportance_id = importance_id_sorted[:, num_fea:]
     nonimportance_id = nonimportance_id.copy()
-    for i in range(obs.shape[0]):
-        obs[i, nonimportance_id[i], ...] = 0
-        acts[i, nonimportance_id[i], ...] = 0
+    mask = torch.ones_like(acts, dtype=torch.long)
+    for j in range(acts.shape[0]):
+        mask[j, nonimportance_id[j, ]] = 0
 
     if explainer.likelihood_type == 'classification':
-        preds_sal, acc = explainer.predict(obs, acts, rewards)
+        preds_sal, acc = explainer.predict(obs * mask[:, :, None, None, None], acts * mask, rewards)
         return -np.log(preds_sal), acc, np.abs(preds_sal-preds_orin[0])
     else:
-        preds_sal = explainer.predict(obs, acts, rewards)
+        preds_sal = explainer.predict(obs * mask[:, :, None, None, None], acts * mask, rewards)
         return np.abs(preds_sal-preds_orin)
 
 
-def exp_stablity(obs, acts, rewards, explainer, saliency, num_sample=5, eps=1):
+def exp_stablity(obs, acts, rewards, explainer, saliency, num_sample=5, eps=0.05):
     # eps: perturbation strength, in pong game, the input value range is (0, 1), add noise range between (0, 1).
     def get_l2_diff(x, y):
         diff_square = np.square((x - y))

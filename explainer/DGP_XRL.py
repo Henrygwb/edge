@@ -25,7 +25,7 @@ import numpy as np
 import torch.optim as optim
 from .quantitative_test import exp_fid2nn_topk, exp_fid2nn_zero_one
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
-from .gp_utils import DGPXRLModel, CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood
+from .gp_utils import DGPXRLModel, CustomizedGaussianLikelihood, CustomizedSoftmaxLikelihood, NNSoftmaxLikelihood
 
 # # Hyper-parameters
 # HIDDENS = [10, 5, 3]
@@ -55,7 +55,7 @@ class DGPXRL(object):
                  gamma, num_inducing_points, n_action=0, encoder_type='MLP', embed_dim=16, inducing_points=None,
                  mean_inducing_points=None, dropout_rate=0.25, num_class=None, rnn_cell_type='GRU', normalize=False,
                  grid_bounds=None, using_ngd=False, using_ksi=False, using_ciq=False, using_sor=False,
-                 using_OrthogonallyDecouple=False):
+                 using_OrthogonallyDecouple=False, weight_x=False):
         """
         Define the full model.
         :param train_len: training data length.
@@ -83,6 +83,7 @@ class DGPXRL(object):
         :param using_ciq: Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
         :param using_sor: Whether to use SoR approximation, not applicable for KSI and CIQ.
         :param using_OrthogonallyDecouple
+        :param weight_x: whether the mixing weights depend on inputs.
         """
         self.len_diff = len_diff
         self.train_len = train_len
@@ -100,7 +101,11 @@ class DGPXRL(object):
             self.likelihood = CustomizedGaussianLikelihood(num_features=seq_len)
         elif self.likelihood_type == 'classification':
             print('Conduct classification and use softmaxLikelihood')
-            self.likelihood = CustomizedSoftmaxLikelihood(num_features=seq_len, num_classes=num_class)
+            if weight_x:
+                print('Varying the mixing weights with an ')
+                self.likelihood = NNSoftmaxLikelihood(num_features=seq_len, num_classes=num_class, input_encoding_dim=hiddens[-1])
+            else:
+                self.likelihood = CustomizedSoftmaxLikelihood(num_features=seq_len, num_classes=num_class)
         else:
             print('Default choice is regression and use GaussianLikelihood')
             self.likelihood = CustomizedGaussianLikelihood(num_features=seq_len)
@@ -181,7 +186,7 @@ class DGPXRL(object):
         :param load_path: load model path.
         :return: model, likelihood.
         """
-        dicts = torch.load(load_path)
+        dicts = torch.load(load_path, map_location=torch.device('cpu'))
         model_dict = dicts['model']
         likelihood_dict = dicts['likelihood']
         self.model.load_state_dict(model_dict)
@@ -618,7 +623,7 @@ class DGPXRL(object):
         return importance, (covar_all.cpu().detach().numpy(), covar_traj.cpu().detach().numpy(),
                             covar_step.cpu().detach().numpy())
 
-    def exp_fid_stab(self, exp_idx, batch_size, traj_path, n_stab_samples=5):
+    def exp_fid_stab(self, exp_idx, batch_size, traj_path, n_stab_samples=5, eps=0.05):
 
         n_batch = int(exp_idx.shape[0] / batch_size)
         sum_time = 0
@@ -652,22 +657,26 @@ class DGPXRL(object):
             stop = timeit.default_timer()
             # print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
             sum_time += (stop - start)
+            preds_orin = self.predict(obs, acts, rewards)
             if self.likelihood_type == 'classification':
-                fid_1, acc_1_temp, abs_diff_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
-                fid_2, acc_2_temp, abs_diff_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
-                fid_3, acc_3_temp, abs_diff_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
-                fid_4, acc_4_temp, abs_diff_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
+                fid_1, acc_1_temp, abs_diff_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal, preds_orin)
+                fid_2, acc_2_temp, abs_diff_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin,
+                                                                int(obs.shape[1] * 0.05))
+                fid_3, acc_3_temp, abs_diff_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin,
+                                                                int(obs.shape[1] * 0.15))
+                fid_4, acc_4_temp, abs_diff_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin,
+                                                                int(obs.shape[1] * 0.25))
                 acc_1 += acc_1_temp
                 acc_2 += acc_2_temp
                 acc_3 += acc_3_temp
                 acc_4 += acc_4_temp
             else:
-                fid_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal)
-                fid_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 10)
-                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 25)
-                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, 50)
+                fid_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal, preds_orin)
+                fid_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1] * 0.05))
+                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1] * 0.25))
+                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1] * 0.5))
 
-            stab = self.exp_stablity(obs, acts, rewards, sal, n_stab_samples)
+            stab = self.exp_stablity(obs, acts, rewards, sal, n_stab_samples, eps)
             fid = np.concatenate((fid_1[None,], fid_2[None,], fid_3[None,], fid_4[None,]))
 
             if self.likelihood_type == 'classification':
@@ -709,7 +718,7 @@ class DGPXRL(object):
         return sal_all, (covar_all_all, covar_traj_all, covar_step_all), fid_all, stab_all, \
                [acc_1, acc_2, acc_3, acc_4], abs_diff_all, mean_time
 
-    def exp_stablity(self, obs, acts, rewards, saliency, num_sample=5, eps=10):
+    def exp_stablity(self, obs, acts, rewards, saliency, num_sample=5, eps=0.05):
         def get_l2_diff(x, y):
             diff_square = np.square((x - y))
             if len(x.shape) > 2:

@@ -506,6 +506,69 @@ class CustomizedSoftmaxLikelihood(Likelihood):
         return super().__call__(function, *params, **kwargs)
 
 
+class NNSoftmaxLikelihood(Likelihood):
+    """
+    Customized softmax (multiclass) likelihood used for GP classification.
+    q(f) ~ N(\mu_f, \Sigma_f), \mu (N*T, 1), \migma_f (N*T, N*T)
+    Sample f from q(f) and reshape it into (N, T), \mathbf W (T, C)
+    p(\mathbf y \mid \mathbf f) = \text{Softmax} \left( \mathbf W \mathbf f \right)
+    """
+    def __init__(self, num_features=None, num_classes=None, input_encoding_dim=None):
+        """
+        :param num_features: Dimensionality of latent function
+        :param num_classes: Number of classes
+        :param mixing_weights_prior: Prior to use over the mixing weights
+        """
+        super().__init__()
+        if num_classes is None:
+            raise ValueError("num_classes is required")
+        self.num_classes = num_classes
+        self.num_features = num_features
+        if num_features is None:
+            raise ValueError("num_features is required with mixing weights")
+        self.weight_encoder = nn.Sequential(
+            nn.Linear(input_encoding_dim, num_features),
+            nn.LeakyReLU(),
+            nn.Linear(num_features, num_features * num_classes)
+        )
+
+    def expected_log_prob(self, observations, function_dist, *args, **kwargs):
+        likelihood_samples = self._draw_likelihood_samples(function_dist, *args, **kwargs)
+        res = likelihood_samples.log_prob(observations).mean(dim=0)
+        return res * self.num_features # times seq_len, because the log_likelihood in _approximate_mll will divide (n_traj*seq_len).
+
+    def forward(self, function_samples, *args, **kwargs):
+        """
+        :param function_samples: samples from q(f).
+        :return: Conditional likelihood distribution.
+        """
+        num_data = int(function_samples.shape[-1]/self.num_features)
+
+        # Catch legacy mode
+        if num_data == self.num_features:
+            warnings.warn(
+                "The input to SoftmaxLikelihood should be a MultitaskMultivariateNormal (num_data x num_tasks). "
+                "Batch MultivariateNormal inputs (num_tasks x num_data) will be deprectated.",
+                DeprecationWarning,
+            )
+            function_samples = function_samples.transpose(-1, -2)
+            num_data, num_features = function_samples.shape[-2:]
+
+        function_samples = function_samples.view(function_samples.size(0),
+                                                   num_data, self.num_features)
+
+        # print('Check the shape of f, should be [n_likelihood_sample, n_traj, traj_length]:')
+        # print(function_samples.shape)
+        mixing_weights = self.weight_encoder(args[0])
+        mixing_weights = mixing_weights.view(mixing_weights.shape[0], self.num_features, self.num_classes)
+        mixed_fs = torch.bmm(function_samples, mixing_weights)  # num_classes x num_data
+            # print('Check the shape of fW, should be [n_likelihood_sample, n_traj, n_classes]:')
+            # print(mixed_fs.shape)
+
+        res = base_distributions.Categorical(logits=mixed_fs)
+        return res
+
+
 class CustomizedGaussianLikelihood(Likelihood):
     """
     Customized Gaussian likelihood for GP regression.
