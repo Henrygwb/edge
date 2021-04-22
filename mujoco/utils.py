@@ -119,7 +119,7 @@ def rollout(agent_path, env, num_traj, exp_agent_id=1, max_ep_len=1e3, save_path
                 cur_states.insert(0, padding_elem_states)
 
             elem_acts = cur_acts[-1]
-            padding_elem_acts = np.ones_like(elem_acts) * -1
+            padding_elem_acts = np.zeors_like(elem_acts)
             for _ in range(padding_amt):
                 cur_acts.insert(0, padding_elem_acts)
 
