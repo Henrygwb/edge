@@ -75,14 +75,15 @@ class RationaleNet(object):
         self.likelihood.load_state_dict(likelihood_dict)
         return self.encoder, self.generator, self.likelihood
 
-    def train(self, train_idx, test_idx, batch_size, n_epoch, traj_path, lr=0.01, gamma=0.1, optimizer_choice='adam',
-              lambda_selection=0.005, lambda_continuity=0.005, save_path=None):
+    def train(self, train_idx, test_idx, batch_size, n_epoch, traj_path, weight=None, lr=0.01, gamma=0.1,
+              optimizer_choice='adam', lambda_selection=0.005, lambda_continuity=0.005, save_path=None):
         """
         :param train_idx: training traj index.
         :param test_idx: testing traj index.
         :param batch_size: training batch size.
         :param n_epoch: number of training epoch.
         :param traj_path: training traj path.
+        :param weight: classification, class weight.
         :param lr: learning rate.
         :param gamma: learning rate decay rate.
         :param optimizer_choice: training optimizer, 'adam' or 'sgd'.
@@ -148,7 +149,9 @@ class RationaleNet(object):
                 output = self.likelihood(output)
                 selection_cost, continuity_cost = self.generator.loss(z)
                 if self.likelihood_type == 'classification':
-                    loss_fn = nn.CrossEntropyLoss()
+                    if torch.cuda.is_available():
+                        weight = weight.cuda()
+                    loss_fn = nn.CrossEntropyLoss(weight=weight)
                 else:
                     loss_fn = nn.MSELoss()
                     output = output.flatten()
