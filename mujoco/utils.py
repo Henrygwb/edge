@@ -106,7 +106,7 @@ def rollout(agent_path, env, num_traj, exp_agent_id=1, max_ep_len=1e3, save_path
 
         if epr != 0:
             max_ep_length = max(len(cur_rewards), max_ep_length)
-            padding_amt = int(max_ep_len - len(cur_obs))
+            padding_amt = int(max_ep_len - len(cur_acts))
 
             # elem_obs = cur_obs[-1]
             # padding_elem_obs = np.zeros_like(elem_obs)
