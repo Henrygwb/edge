@@ -149,7 +149,7 @@ class RationaleNet(object):
                 output = self.likelihood(output)
                 selection_cost, continuity_cost = self.generator.loss(z)
                 if self.likelihood_type == 'classification':
-                    if torch.cuda.is_available():
+                    if torch.cuda.is_available() and weight is not None:
                         weight = weight.cuda()
                     loss_fn = nn.CrossEntropyLoss(weight=weight)
                 else:

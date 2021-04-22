@@ -142,8 +142,8 @@ class RnnSaliency(object):
                 output = self.likelihood(output)
 
                 if self.likelihood_type == 'classification':
-                    if torch.cuda.is_available():
-                        weight = weight.cuda()
+                    if torch.cuda.is_available() and weight is not None:
+                            weight = weight.cuda()
                     loss_fn = nn.CrossEntropyLoss(weight=weight)
                 else:
                     loss_fn = nn.MSELoss()
@@ -179,8 +179,6 @@ class RnnSaliency(object):
             self.test(test_idx, batch_size, traj_path)
             self.model.train()
             self.likelihood.train()
-
-            self.test(test_idx, batch_size, traj_path)
 
         if save_path:
             self.save(save_path)

@@ -159,7 +159,7 @@ class RnnAttn(object):
                 output = self.likelihood(output)
 
                 if self.likelihood_type == 'classification':
-                    if torch.cuda.is_available():
+                    if torch.cuda.is_available() and weight is not None:
                         weight = weight.cuda()
                     loss_fn = nn.CrossEntropyLoss(weight=weight)
                 else:
