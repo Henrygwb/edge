@@ -106,8 +106,7 @@ def rollout(agent_path, env, num_traj, exp_agent_id=1, max_ep_len=1e3, save_path
 
         if epr != 0:
             max_ep_length = max(len(cur_rewards), max_ep_length)
-
-            # padding_amt = int(max_ep_len - len(cur_obs))
+            padding_amt = int(max_ep_len - len(cur_acts))
 
             # elem_obs = cur_obs[-1]
             # padding_elem_obs = np.zeros_like(elem_obs)
@@ -120,7 +119,7 @@ def rollout(agent_path, env, num_traj, exp_agent_id=1, max_ep_len=1e3, save_path
                 cur_states.insert(0, padding_elem_states)
 
             elem_acts = cur_acts[-1]
-            padding_elem_acts = np.ones_like(elem_acts) * -1
+            padding_elem_acts = np.zeors_like(elem_acts)
             for _ in range(padding_amt):
                 cur_acts.insert(0, padding_elem_acts)
 
