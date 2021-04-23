@@ -1,12 +1,10 @@
 import os, sys
 sys.path.append('..')
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
-import torch
 import numpy as np
 import gym, argparse
 import timeit
 import gym_compete
-from scipy.misc import imresize
 from mujoco.utils import rollout
 from mujoco.render_mujoco import Render_mujoco
 
