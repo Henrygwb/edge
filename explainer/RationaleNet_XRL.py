@@ -135,10 +135,8 @@ class RationaleNet(object):
                     act_dtype = torch.float32
                 else:
                     act_dtype = torch.long
-                if len(batch_acts[0].shape) == 2:
-                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
-                else:
-                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
+
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
 
                 if self.likelihood_type == 'classification':
                     rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
@@ -269,10 +267,8 @@ class RationaleNet(object):
                 act_dtype = torch.float32
             else:
                 act_dtype = torch.long
-            if len(batch_acts[0].shape) == 2:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
-            else:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
+
+            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
 
             if self.likelihood_type == 'classification':
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
@@ -343,10 +339,8 @@ class RationaleNet(object):
                 act_dtype = torch.float32
             else:
                 act_dtype = torch.long
-            if len(batch_acts[0].shape) == 2:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
-            else:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
+
+            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
 
             if self.likelihood_type == 'classification':
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
@@ -527,10 +521,8 @@ class RationaleNet(object):
                 act_dtype = torch.float32
             else:
                 act_dtype = torch.long
-            if len(batch_acts[0].shape) == 2:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
-            else:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
+
+            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
 
             if self.likelihood_type == 'classification':
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)

@@ -47,13 +47,13 @@ len_diff = max_ep_len - seq_len
 total_data_idx = np.arange(int(np.load(traj_path + '_num_traj.npy'))) # np.arange(30)
 train_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0]*0.7):, ]
-exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.1), ]
+exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.5), ]
 
 hiddens = [4]
 encoder_type = 'CNN'
 rnn_cell_type = 'GRU'
-n_epoch = 200
-batch_size = 10
+n_epoch = 2
+batch_size = 4
 save_path = 'exp_model_results/'
 likelihood_type = 'classification'
 n_stab_samples = 10
@@ -332,7 +332,7 @@ elif args.explainer == 'dgp':
                            grid_bounds=grid_bound, encoder_type=encoder_type, inducing_points=None,
                            mean_inducing_points=None, num_class=num_class, rnn_cell_type=rnn_cell_type,
                            using_ngd=using_ngd, using_ksi=using_ksi, using_ciq=using_ciq, using_sor=using_sor,
-                           using_OrthogonallyDecouple=using_OrthogonallyDecouple, weight_x=True)
+                           using_OrthogonallyDecouple=using_OrthogonallyDecouple, weight_x=False)
 
     name = 'dgp_' + likelihood_type + '_' + rnn_cell_type + '_' + \
            str(num_inducing_points)+'_'+ str(using_ngd) + '_' + str(using_ngd) + '_' \
@@ -345,7 +345,7 @@ elif args.explainer == 'dgp':
     dgp_explainer.test(test_idx, batch_size, traj_path)
 
     sal_rationale_all, covar_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = dgp_explainer.exp_fid_stab(
-        exp_idx, batch_size, traj_path, n_stab_samples)
+        exp_idx, batch_size, traj_path, logit=True, n_stab_samples=n_stab_samples)
 
     print('=============================================')
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))

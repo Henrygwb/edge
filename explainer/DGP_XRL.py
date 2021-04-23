@@ -193,11 +193,16 @@ class DGPXRL(object):
         self.likelihood.load_state_dict(likelihood_dict)
         return self.model, self.likelihood
 
-    def train(self, train_idx, test_idx, batch_size, traj_path, save_path=None, likelihood_sample_size=8):
+    def train(self, train_idx, test_idx, batch_size, traj_path, lambda_1=0.01, lambda_2=0.01, eps=0.1, local_samples=10,
+              save_path=None, likelihood_sample_size=8):
         """
         :param train_idx: training traj index.
         :param test_idx: testing traj index.
         :param batch_size: training batch size.
+        :param lambda_1: lasso strength.
+        :param lambda_2: local linear loss strength.
+        :param eps: local linear region.
+        :param local_samples: .
         :param traj_path: training traj path.
         :param save_path: model save path.
         :param likelihood_sample_size: .
@@ -233,14 +238,13 @@ class DGPXRL(object):
                             batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
 
                         obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+
                         if self.n_action == 0:
                             act_dtype = torch.float32
                         else:
                             act_dtype = torch.long
-                        if len(batch_acts[0].shape) == 2:
-                            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
-                        else:
-                            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
+
+                        acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
 
                         if self.likelihood_type == 'classification':
                             rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
@@ -259,8 +263,20 @@ class DGPXRL(object):
                         output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
                         if self.weight_x:
                             loss = -self.mll(output, rewards, input_encoding=features)  # approximated ELBO.
+                            weight_output = self.likelihood.weight_encoder(features)
+                            local_perturbations = torch.rand(local_samples, features.shape[0], features.shape[1],
+                                                             features.shape[2]) * 2 * eps - eps
+                            if torch.cuda.is_available():
+                                local_perturbations = local_perturbations.cuda()
+                            perturbed_output = self.likelihood.weight_encoder(features+local_perturbations)
+                            local_linear_loss = torch.abs(weight_output-perturbed_output)
+                            local_linear_loss = local_linear_loss.mean(local_linear_loss.shape[1:])
+                            loss = loss + lambda_2 * local_linear_loss
                         else:
                             loss = -self.mll(output, rewards)  # approximated ELBO.
+                            lasso_term = torch.norm(self.likelihood.mixing_weights, p=1) # lasso
+                            loss = loss + lambda_1 * lasso_term
+
                         loss.backward()
                         if self.using_ngd:
                             self.variational_ngd_optimizer.step()
@@ -269,7 +285,10 @@ class DGPXRL(object):
                             self.optimizer.step()
 
                         loss_sum += loss.item()
-                        output = self.likelihood(output)  # This gives us 8 samples from the predictive distribution (q(y|f_*)).
+                        if self.weight_x:
+                            output = self.likelihood(output, input_encoding=features)
+                        else:
+                            output = self.likelihood(output)  # This gives us 8 samples from the predictive distribution (q(y|f_*)).
                         if self.likelihood_type == 'classification':
                             preds = output.probs.mean(0).argmax(-1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
                             preds_all.extend(preds.cpu().detach().numpy().tolist())
@@ -295,9 +314,9 @@ class DGPXRL(object):
                         print('Train MSE: {}'.format(mse / float(self.train_len)))
 
             self.scheduler.step()
-            self.test(test_idx, batch_size, traj_path)
-            self.model.train()
-            self.likelihood.train()
+            # self.test(test_idx, batch_size, traj_path)
+            # self.model.train()
+            # self.likelihood.train()
 
         if save_path:
             self.save(save_path)
@@ -318,7 +337,10 @@ class DGPXRL(object):
             self.model, self.likelihood = self.model.cuda(), self.likelihood.cuda()
 
         f_predicted, features = self.model(obs, acts)
-        output = self.likelihood(f_predicted, {'input_encoding': features})  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
+        if self.weight_x:
+            output = self.likelihood(f_predicted, input_encoding=features)
+        else:
+            output = self.likelihood(f_predicted)  # This gives us 8 samples from the predictive distribution (q(y|f_*)).
 
         if self.likelihood_type == 'classification':
             preds = output.probs.mean(0)
@@ -378,14 +400,13 @@ class DGPXRL(object):
                     batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
 
                 obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+
                 if self.n_action == 0:
                     act_dtype = torch.float32
                 else:
                     act_dtype = torch.long
-                if len(batch_acts[0].shape) == 2:
-                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
-                else:
-                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
+
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
 
                 if self.likelihood_type == 'classification':
                     rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
@@ -396,7 +417,11 @@ class DGPXRL(object):
                 #     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
 
                 f_predicted, features = self.model(obs, acts)
-                output = self.likelihood(f_predicted, {'input_encoding': features})  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
+                if self.weight_x:
+                    output = self.likelihood(f_predicted, input_encoding=features)
+                else:
+                    output = self.likelihood(
+                        f_predicted)  # This gives us 8 samples from the predictive distribution (q(y|f_*)).
 
                 if self.likelihood_type == 'classification':
                     preds = output.probs.mean(0).argmax(-1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
@@ -428,12 +453,13 @@ class DGPXRL(object):
             print('Test MSE: {}'.format(mse / float(test_idx.shape[0])))
             return mse, mae
 
-    def get_explanations(self, exp_idx, batch_size, traj_path, normalize=True):
+    def get_explanations(self, exp_idx, batch_size, traj_path, logit=True, normalize=True):
         """
         :param exp_idx: training traj index.
         :param batch_size: training batch size.
         :param traj_path: training traj path.
         :param normalize: normalize.
+        :param logit: .
         :return: time step importance.
         """
         if torch.cuda.is_available():
@@ -458,10 +484,8 @@ class DGPXRL(object):
                 act_dtype = torch.float32
             else:
                 act_dtype = torch.long
-            if len(batch_acts[0].shape) == 2:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
-            else:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
+
+            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
 
             if self.likelihood_type == 'classification':
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
@@ -470,8 +494,6 @@ class DGPXRL(object):
 
             if torch.cuda.is_available():
                 obs, acts = obs.cuda(), acts.cuda()
-
-            importance = self.likelihood.mixing_weights
             step_embedding, traj_embedding = self.model.encoder(obs, acts)  # (N, T, P) -> (N, T, D), (N, D).
             traj_embedding = traj_embedding[:, None, :].repeat(1, obs.shape[1], 1)  # (N, D) -> (N, T, D)
             features = torch.cat([step_embedding, traj_embedding], dim=-1)  # (N, T, 2D)
@@ -479,16 +501,32 @@ class DGPXRL(object):
             covar_all = self.model.gp_layer.covar_module(features)
             covar_step = self.model.gp_layer.step_kernel(features)
             covar_traj = self.model.gp_layer.traj_kernel(features)
-            # TODO: combine importance weight with covariance structure.
+
+            if self.weight_x:
+                importance = self.likelihood.mixing_weights(features)
+                importance = importance.resize(importance.shape[0], self.likelihood.num_features,
+                                               self.likelihood.num_classes)
+            else:
+                importance = self.likelihood.mixing_weights
+                importance = importance.resize(self.likelihood.num_features, self.likelihood.num_classes)
+
             importance = importance.cpu().detach().numpy()
 
             if len(importance.shape) == 2:
-                importance = importance.transpose()
                 importance = np.repeat(importance[None, ...], rewards.shape[0], axis=0)
-                if importance.shape[-1] > 1:
-                    importance = importance[list(range(rewards.shape[0])), :, rewards]
-                else:
-                    importance = np.squeeze(importance, -1)
+
+            if importance.shape[-1] > 1:
+                importance = importance[list(range(rewards.shape[0])), :,
+                             rewards]  # back from the logit i.e., WF -> W^T
+                if not logit:
+                    # todo: support multi-classes (larger than two).
+                    # back from the logit i.e., WF -> W^T
+                    importance_oppo = importance[list(range(rewards.shape[0])), :, (1 - rewards)]
+                    importance = importance - importance_oppo
+            else:
+                importance = np.squeeze(importance, -1)
+
+            # TODO: combine importance weight with covariance structure.
 
             if batch == 0:
                 saliency_all = importance
@@ -598,11 +636,12 @@ class DGPXRL(object):
                 print('Test MAE: {}'.format(mae / float(len(test_loader.dataset))))
                 print('Test MSE: {}'.format(mse / float(len(test_loader.dataset))))
 
-    def get_explanations_by_tensor(self, obs, acts, rewards, normalize=True):
+    def get_explanations_by_tensor(self, obs, acts, rewards, logit=True, normalize=True):
         """
         :param obs: input observations.
         :param acts: input actions.
         :param rewards: trajectory rewards.
+        :param logit: whether to back to logit.
         :return: time step importance.
         """
 
@@ -613,7 +652,6 @@ class DGPXRL(object):
             obs, acts = obs.cuda(), acts.cuda()
             self.model, self.likelihood = self.model.cuda(), self.likelihood.cuda()
 
-        importance = self.likelihood.mixing_weights
         step_embedding, traj_embedding = self.model.encoder(obs, acts)  # (N, T, P) -> (N, T, D), (N, D).
         traj_embedding = traj_embedding[:, None, :].repeat(1, obs.shape[1], 1)  # (N, D) -> (N, T, D)
         features = torch.cat([step_embedding, traj_embedding], dim=-1)  # (N, T, 2D)
@@ -621,16 +659,32 @@ class DGPXRL(object):
         covar_all = self.model.gp_layer.covar_module(features)
         covar_step = self.model.gp_layer.step_kernel(features)
         covar_traj = self.model.gp_layer.traj_kernel(features)
-        # TODO: combine importance weight with covariance structure.
+
+        if self.weight_x:
+            importance = self.likelihood.mixing_weights(features)
+            importance = importance.resize(importance.shape[0], self.likelihood.num_features,
+                                           self.likelihood.num_classes)
+        else:
+            importance = self.likelihood.mixing_weights
+            importance = importance.resize(self.likelihood.num_features, self.likelihood.num_classes)
 
         importance = importance.cpu().detach().numpy()
+
         if len(importance.shape) == 2:
-            importance = importance.transpose()
             importance = np.repeat(importance[None, ...], rewards.shape[0], axis=0)
-            if importance.shape[-1] > 1:
-                importance = importance[list(range(rewards.shape[0])), :, rewards]
-            else:
-                importance = np.squeeze(importance, -1)
+
+        if importance.shape[-1] > 1:
+            importance = importance[list(range(rewards.shape[0])), :, rewards]  # back from the logit i.e., WF -> W^T
+            if not logit:
+                # todo: support multi-classes (larger than two).
+                # back from the logit i.e., WF -> W^T
+                importance_oppo = importance[list(range(rewards.shape[0])), :, (1-rewards)]
+                importance = importance - importance_oppo
+        else:
+            importance = np.squeeze(importance, -1)
+
+        # TODO: combine importance weight with covariance structure.
+
         if normalize:
             importance = (importance - np.min(importance, axis=1)[:, None]) \
                          / (np.max(importance, axis=1)[:, None] - np.min(importance, axis=1)[:, None] + 1e-16)
@@ -638,7 +692,7 @@ class DGPXRL(object):
         return importance, (covar_all.cpu().detach().numpy(), covar_traj.cpu().detach().numpy(),
                             covar_step.cpu().detach().numpy())
 
-    def exp_fid_stab(self, exp_idx, batch_size, traj_path, n_stab_samples=5, eps=0.05):
+    def exp_fid_stab(self, exp_idx, batch_size, traj_path, logit=True, n_stab_samples=5, eps=0.05):
 
         n_batch = int(exp_idx.shape[0] / batch_size)
         sum_time = 0
@@ -662,10 +716,8 @@ class DGPXRL(object):
                 act_dtype = torch.float32
             else:
                 act_dtype = torch.long
-            if len(batch_acts[0].shape) == 2:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
-            else:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
+
+            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
 
             if self.likelihood_type == 'classification':
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
@@ -673,7 +725,7 @@ class DGPXRL(object):
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
             start = timeit.default_timer()
-            sal, cov = self.get_explanations_by_tensor(obs, acts, rewards)
+            sal, cov = self.get_explanations_by_tensor(obs, acts, rewards, logit)
             stop = timeit.default_timer()
             # print('Explanation time of {} samples: {}.'.format(obs.shape[0], (stop - start)))
             sum_time += (stop - start)
