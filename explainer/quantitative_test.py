@@ -42,11 +42,8 @@ def exp_fid2nn_topk(obs, acts, rewards, explainer, saliency, preds_orin, num_fea
     mask_acts = torch.ones_like(acts, dtype=torch.long)
 
     for j in range(acts.shape[0]):
-        if acts.shape == 2:
-            mask_acts[j, nonimportance_id[j,]] = 0
-        else:
-            mask_acts[j, nonimportance_id[j,], ...] = 0
-        mask_obs[j, nonimportance_id[j,], ...] = 0
+        mask_acts[j, nonimportance_id[j,]] = 0
+        mask_obs[j, nonimportance_id[j,]] = 0
 
     if explainer.likelihood_type == 'classification':
         preds_sal, acc = explainer.predict(obs * mask_obs, acts * mask_acts, rewards)

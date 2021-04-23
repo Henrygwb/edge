@@ -505,11 +505,8 @@ class Rudder(object):
         mask_acts = torch.ones_like(acts, dtype=torch.long)
 
         for j in range(acts.shape[0]):
-            if acts.shape == 2:
-                mask_acts[j, nonimportance_id[j,]] = 0
-            else:
-                mask_acts[j, nonimportance_id[j,], ...] = 0
-            mask_obs[j, nonimportance_id[j,], ...] = 0
+            mask_acts[j, nonimportance_id[j,]] = 0
+            mask_obs[j, nonimportance_id[j,]] = 0
 
         preds_sal = explainer.predict(obs * mask_obs, acts * mask_acts, rewards)
 

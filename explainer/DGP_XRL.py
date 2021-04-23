@@ -322,7 +322,7 @@ class DGPXRL(object):
             self.save(save_path)
         return self.model
 
-    def predict(self, obs, acts, rewards):
+    def predict(self, obs, acts, rewards, likelihood_sample_size=16):
         """
         :param obs: input observations.
         :param acts: input actions.
@@ -336,11 +336,12 @@ class DGPXRL(object):
             obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
             self.model, self.likelihood = self.model.cuda(), self.likelihood.cuda()
 
-        f_predicted, features = self.model(obs, acts)
-        if self.weight_x:
-            output = self.likelihood(f_predicted, input_encoding=features)
-        else:
-            output = self.likelihood(f_predicted)  # This gives us 8 samples from the predictive distribution (q(y|f_*)).
+        with torch.no_grad(), gpytorch.settings.num_likelihood_samples(likelihood_sample_size):
+            f_predicted, features = self.model(obs, acts)
+            if self.weight_x:
+                output = self.likelihood(f_predicted, input_encoding=features)
+            else:
+                output = self.likelihood(f_predicted)  # This gives us 8 samples from the predictive distribution (q(y|f_*)).
 
         if self.likelihood_type == 'classification':
             preds = output.probs.mean(0)
@@ -661,24 +662,24 @@ class DGPXRL(object):
         covar_traj = self.model.gp_layer.traj_kernel(features)
 
         if self.weight_x:
-            importance = self.likelihood.mixing_weights(features)
-            importance = importance.resize(importance.shape[0], self.likelihood.num_features,
-                                           self.likelihood.num_classes)
+            importance_all = self.likelihood.mixing_weights(features)
+            importance_all = importance_all.resize(importance_all.shape[0], self.likelihood.num_features,
+                                                   self.likelihood.num_classes)
         else:
-            importance = self.likelihood.mixing_weights
-            importance = importance.resize(self.likelihood.num_features, self.likelihood.num_classes)
+            importance_all = self.likelihood.mixing_weights.clone()
+            importance_all = importance_all.resize(self.likelihood.num_features, self.likelihood.num_classes)
 
-        importance = importance.cpu().detach().numpy()
+        importance_all = importance_all.cpu().detach().numpy()
 
-        if len(importance.shape) == 2:
-            importance = np.repeat(importance[None, ...], rewards.shape[0], axis=0)
+        if len(importance_all.shape) == 2:
+            importance_all = np.repeat(importance_all[None, ...], rewards.shape[0], axis=0)
 
-        if importance.shape[-1] > 1:
-            importance = importance[list(range(rewards.shape[0])), :, rewards]  # back from the logit i.e., WF -> W^T
+        if importance_all.shape[-1] > 1:
+            importance = importance_all[list(range(rewards.shape[0])), :, rewards]  # back from the logit i.e., WF -> W^T
             if not logit:
                 # todo: support multi-classes (larger than two).
                 # back from the logit i.e., WF -> W^T
-                importance_oppo = importance[list(range(rewards.shape[0])), :, (1-rewards)]
+                importance_oppo = importance_all[list(range(rewards.shape[0])), :, (1-rewards)]
                 importance = importance - importance_oppo
         else:
             importance = np.squeeze(importance, -1)

@@ -325,6 +325,12 @@ elif args.explainer == 'dgp':
     using_sor = False # Whether to use SoR approximation, not applicable for KSI and CIQ.
     using_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
+    weight_x = True
+    logit = True
+    lambda_1 = 0.01
+    lambda_2 = 0.02
+    local_samples = 10
+    likelihood_sample_size = 8
 
     dgp_explainer = DGPXRL(train_len=train_idx.shape[0], seq_len=seq_len, len_diff=len_diff, input_dim=input_dim,
                            hiddens=hiddens, likelihood_type=likelihood_type, lr=0.01, optimizer_type=optimizer,
@@ -332,20 +338,23 @@ elif args.explainer == 'dgp':
                            grid_bounds=grid_bound, encoder_type=encoder_type, inducing_points=None,
                            mean_inducing_points=None, num_class=num_class, rnn_cell_type=rnn_cell_type,
                            using_ngd=using_ngd, using_ksi=using_ksi, using_ciq=using_ciq, using_sor=using_sor,
-                           using_OrthogonallyDecouple=using_OrthogonallyDecouple, weight_x=False)
+                           using_OrthogonallyDecouple=using_OrthogonallyDecouple, weight_x=weight_x)
 
     name = 'dgp_' + likelihood_type + '_' + rnn_cell_type + '_' + \
            str(num_inducing_points)+'_'+ str(using_ngd) + '_' + str(using_ngd) + '_' \
            + str(using_ksi) + '_' + str(using_ciq) + '_' + str(using_sor) + '_' \
-           + str(using_OrthogonallyDecouple)
+           + str(using_OrthogonallyDecouple) + str(weight_x) + str(logit)
 
-    dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, save_path=save_path+name+'_model.data')
+    dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, lambda_1=lambda_1, lambda_2=lambda_2,
+                        local_samples=local_samples, likelihood_sample_size=likelihood_sample_size,
+                        save_path=save_path+name+'_model.data')
+
     dgp_explainer.test(test_idx, batch_size, traj_path)
     dgp_explainer.load(save_path+name+'_model.data')
     dgp_explainer.test(test_idx, batch_size, traj_path)
 
     sal_rationale_all, covar_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = dgp_explainer.exp_fid_stab(
-        exp_idx, batch_size, traj_path, logit=True, n_stab_samples=n_stab_samples)
+        exp_idx, batch_size, traj_path, logit=False, n_stab_samples=n_stab_samples)
 
     print('=============================================')
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
