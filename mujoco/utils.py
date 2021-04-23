@@ -106,14 +106,13 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
             actions = tuple(actions)
             observation, _, done, infos = env.step(actions)
             reward = infos[exp_agent_id]['reward_remaining']
-            if done: epr = reward
-
+            if done: 
+               assert reward != 0
+               epr = reward
             #state = env.render(mode='rgb_array')
-
             # save info
             #cur_obs.append(state)
             cur_states.append(observation[exp_agent_id])
-            
             cur_acts.append(actions[exp_agent_id])
             cur_rewards.append(reward)
             cur_values.append(values[exp_agent_id])
@@ -123,21 +122,21 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
         if epr != 0:
             max_ep_length = max(len(cur_rewards), max_ep_length)
             padding_amt = int(max_ep_len - len(cur_acts))
-
             # elem_obs = cur_obs[-1]
             # padding_elem_obs = np.zeros_like(elem_obs)
             # for _ in range(padding_amt):
             #     cur_obs.insert(0, padding_elem_obs)
-
             elem_states = cur_states[-1]
             padding_elem_states = np.zeros_like(elem_states)
             for _ in range(padding_amt):
                 cur_states.insert(0, padding_elem_states)
-
+            assert len(cur_states) == max_ep_len
+            
             elem_acts = cur_acts[-1]
             padding_elem_acts = np.zeors_like(elem_acts)
             for _ in range(padding_amt):
                 cur_acts.insert(0, padding_elem_acts)
+            assert len(cur_acts) == max_ep_len
 
             elem_rewards = cur_rewards[-1]
             padding_elem_rewards = np.zeros_like(elem_rewards)
