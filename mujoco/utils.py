@@ -8,43 +8,11 @@ import copy
 import gym
 from PIL import Image
 from scipy.misc import imresize
-import torch.nn.functional as F
-from torch.autograd import Variable
 from abc import ABC, abstractmethod
+from stable_baselines.common.policies import MlpPolicy
 
-#prepro = lambda img: imresize(img[35:195].mean(2), (80,80)).astype(np.float32).reshape(1,80,80)/255.
-
-class NNPolicy(torch.nn.Module): # an actor-critic neural network
-    def __init__(self, channels, num_actions):
-        super(NNPolicy, self).__init__()
-        self.conv1 = nn.Conv2d(channels, 32, 3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.conv4 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.lstm = nn.LSTMCell(32 * 5 * 5, 256)
-        self.critic_linear, self.actor_linear = nn.Linear(256, 1), nn.Linear(256, num_actions)
-
-    def forward(self, inputs):
-        inputs, (hx, cx) = inputs
-        x = F.elu(self.conv1(inputs))
-        x = F.elu(self.conv2(x))
-        x = F.elu(self.conv3(x))
-        x = F.elu(self.conv4(x))
-        x = x.view(-1, 32 * 5 * 5)
-        hx, cx = self.lstm(x, (hx, cx)) 
-        return self.critic_linear(hx), self.actor_linear(hx), (hx, cx)
-
-    def try_load(self, save_dir, checkpoint='*.tar'):
-        paths = glob.glob(save_dir + checkpoint) ; step = 0
-        if len(paths) > 0:
-            ckpts = [int(s.split('.')[-2]) for s in paths]
-            ix = np.argmax(ckpts) ; step = ckpts[ix]
-            self.load_state_dict(torch.load(paths[ix]))
-        print("\tno saved models") if step is 0 else print("\tloaded model: {}".format(paths[ix]))
-        return step
-
-
-def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None, exp_agent_id=1, max_ep_len=1e3, save_path=None, render=False):
+def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None, exp_agent_id=1,
+            max_ep_len=1e3, save_path=None, render=False):
 
     # load agent-0 / agent-1 
     tf_config = tf.ConfigProto(
@@ -61,7 +29,7 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
                                         ac_space=env.action_space.spaces[i],
                                         hiddens=[64, 64], normalize=True))
         elif agent_type[i] == 'adv':
-             policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i], 
+           policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i],
                           1, 1, 1, reuse=False))
 
     sess.run(tf.variables_initializer(tf.global_variables()))
@@ -73,12 +41,10 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
            param = load_from_file(param_pkl_path=param_path)
            setFromFlat(policy[i].get_variables(), param)
         else:
-           param = load_from_model(agent_path + '/ucb_adv.pkl')
+           param = load_from_model(agent_path + '/model.pkl')
            adv_agent_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='model')
            setFromFlat(adv_agent_variables, param)
 
-
-    all_obs, all_acts, all_rewards, all_values = [], [], [], []
     max_ep_length = 0
     traj_count = 3164
     for i in range(num_traj):
@@ -96,7 +62,7 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
             for i, obs in enumerate(observation):
                 if agent_type[i] == 'zoo':
                    act, value = policy[i].act(stochastic=False, observation=obs)
-                else
+                else:
                    obs = np.clip((obs - obs_rms.mean) / np.sqrt(obs_rms.var + 1e-8), -10, 10)
                    act = policy[i].step(obs=obs[None, :], deterministic=True)[0][0]
                    value = None
@@ -109,6 +75,7 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
             if done: 
                assert reward != 0
                epr = reward
+            env.render()
             #state = env.render(mode='rgb_array')
             # save info
             #cur_obs.append(state)
@@ -133,7 +100,7 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
             assert len(cur_states) == max_ep_len
             
             elem_acts = cur_acts[-1]
-            padding_elem_acts = np.zeors_like(elem_acts)
+            padding_elem_acts = np.zeros_like(elem_acts)
             for _ in range(padding_amt):
                 cur_acts.insert(0, padding_elem_acts)
             assert len(cur_acts) == max_ep_len
@@ -179,6 +146,28 @@ def load_from_file(param_pkl_path):
     else:
         params = np.load(param_pkl_path)
     return params
+
+def load_from_model(param_pkl_path):
+
+    if param_pkl_path.endswith('.pkl'):
+       with open(param_pkl_path, 'rb') as f:
+            params = pickle.load(f)
+       policy_param = params[1][0]
+       flat_param = []
+       for param in policy_param:
+           flat_param.append(param.reshape(-1))
+       flat_param = np.concatenate(flat_param, axis=0)
+    else:
+        flat_param = np.load(param_pkl_path, allow_pickle=True)
+        if len(flat_param)==3:
+            flat_param_1 = []
+            for i in flat_param[0]:
+                    flat_param_1.append(i)
+            flat_param = []
+            for param in flat_param_1:
+                flat_param.append(param.reshape(-1))
+            flat_param = np.concatenate(flat_param, axis=0)
+    return flat_param
 
 def setFromFlat(var_list, flat_params, sess=None):
     shapes = list(map(lambda x: x.get_shape().as_list(), var_list))

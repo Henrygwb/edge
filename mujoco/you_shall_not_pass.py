@@ -7,10 +7,8 @@ import gym, argparse
 import timeit
 import gym_compete
 from scipy.misc import imresize
-from mujoco.utils import NNPolicy, rollout
+from mujoco.utils import rollout
 from mujoco.render_mujoco import Render_mujoco
-from explainer.RnnSaliency_XRL import RnnSaliency
-from explainer.RationaleNet_XRL import RationaleNet
 
 # Setup env, load the target agent, and collect the trajectories.
 env_name = 'multicomp/YouShallNotPassHumans-v0'
@@ -26,4 +24,5 @@ resolution = (533, 300)
 env = gym.make(env_name)
 #env = Render_mujoco(env, env_name, None, resolution, 'default')
 env.seed(1)
-rollout(agent_path, env, num_traj=num_traj, norm_path=norm_path, agent_type=['zoo','adv'], max_ep_len=200, save_path=traj_path, render=False)
+rollout(agent_path, env, num_traj=num_traj, norm_path=norm_path, agent_type=['adv','zoo'],
+        max_ep_len=200, save_path=traj_path, render=False)
