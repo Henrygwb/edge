@@ -94,16 +94,16 @@ class DGPXRL(object):
         self.n_epoch = n_epoch
         self.gamma = gamma
         self.using_ngd = using_ngd
-
+        self.weight_x = weight_x
         # Build the likelihood layer (Regression and classification).
         if self.likelihood_type == 'regression':
             print('Conduct regression and use GaussianLikelihood')
             self.likelihood = CustomizedGaussianLikelihood(num_features=seq_len)
         elif self.likelihood_type == 'classification':
             print('Conduct classification and use softmaxLikelihood')
-            if weight_x:
+            if self.weight_x:
                 print('Varying the mixing weights with an ')
-                self.likelihood = NNSoftmaxLikelihood(num_features=seq_len, num_classes=num_class, input_encoding_dim=hiddens[-1])
+                self.likelihood = NNSoftmaxLikelihood(num_features=seq_len, num_classes=num_class, input_encoding_dim=hiddens[-1]*2)
             else:
                 self.likelihood = CustomizedSoftmaxLikelihood(num_features=seq_len, num_classes=num_class)
         else:
@@ -234,9 +234,13 @@ class DGPXRL(object):
 
                         obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
                         if self.n_action == 0:
-                            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+                            act_dtype = torch.float32
                         else:
-                            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+                            act_dtype = torch.long
+                        if len(batch_acts[0].shape) == 2:
+                            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
+                        else:
+                            acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
 
                         if self.likelihood_type == 'classification':
                             rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
@@ -252,8 +256,11 @@ class DGPXRL(object):
                         else:
                             self.optimizer.zero_grad()
 
-                        output = self.model(obs, acts)  # marginal variational posterior, q(f|x).
-                        loss = -self.mll(output, rewards)  # approximated ELBO.
+                        output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
+                        if self.weight_x:
+                            loss = -self.mll(output, rewards, input_encoding=features)  # approximated ELBO.
+                        else:
+                            loss = -self.mll(output, rewards)  # approximated ELBO.
                         loss.backward()
                         if self.using_ngd:
                             self.variational_ngd_optimizer.step()
@@ -310,8 +317,8 @@ class DGPXRL(object):
             obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
             self.model, self.likelihood = self.model.cuda(), self.likelihood.cuda()
 
-        f_predicted = self.model(obs, acts)
-        output = self.likelihood(f_predicted)  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
+        f_predicted, features = self.model(obs, acts)
+        output = self.likelihood(f_predicted, {'input_encoding': features})  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
 
         if self.likelihood_type == 'classification':
             preds = output.probs.mean(0)
@@ -372,9 +379,13 @@ class DGPXRL(object):
 
                 obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
                 if self.n_action == 0:
-                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+                    act_dtype = torch.float32
                 else:
-                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+                    act_dtype = torch.long
+                if len(batch_acts[0].shape) == 2:
+                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
+                else:
+                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
 
                 if self.likelihood_type == 'classification':
                     rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
@@ -384,8 +395,8 @@ class DGPXRL(object):
                 # if torch.cuda.is_available():
                 #     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
 
-                f_predicted = self.model(obs, acts)
-                output = self.likelihood(f_predicted)  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
+                f_predicted, features = self.model(obs, acts)
+                output = self.likelihood(f_predicted, {'input_encoding': features})  # This gives us 16 samples from the predictive distribution (q(y|f_*)).
 
                 if self.likelihood_type == 'classification':
                     preds = output.probs.mean(0).argmax(-1)  # Take the mean over all of the sample we've drawn (y = E_{f_* ~ q(f_*)}[y|f_*]).
@@ -444,9 +455,13 @@ class DGPXRL(object):
             obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
 
             if self.n_action == 0:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+                act_dtype = torch.float32
             else:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+                act_dtype = torch.long
+            if len(batch_acts[0].shape) == 2:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
 
             if self.likelihood_type == 'classification':
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)
@@ -642,10 +657,15 @@ class DGPXRL(object):
                 batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
 
             obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+
             if self.n_action == 0:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+                act_dtype = torch.float32
             else:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+                act_dtype = torch.long
+            if len(batch_acts[0].shape) == 2:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
 
             if self.likelihood_type == 'classification':
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.long)

@@ -37,15 +37,22 @@ def exp_fid2nn_topk(obs, acts, rewards, explainer, saliency, preds_orin, num_fea
     importance_id_sorted = np.argsort(saliency, axis=1)[:, ::-1] # high to low.
     nonimportance_id = importance_id_sorted[:, num_fea:]
     nonimportance_id = nonimportance_id.copy()
-    mask = torch.ones_like(acts, dtype=torch.long)
+
+    mask_obs = torch.ones_like(obs, dtype=torch.float32)
+    mask_acts = torch.ones_like(acts, dtype=torch.long)
+
     for j in range(acts.shape[0]):
-        mask[j, nonimportance_id[j, ]] = 0
+        if acts.shape == 2:
+            mask_acts[j, nonimportance_id[j,]] = 0
+        else:
+            mask_acts[j, nonimportance_id[j,], ...] = 0
+        mask_obs[j, nonimportance_id[j,], ...] = 0
 
     if explainer.likelihood_type == 'classification':
-        preds_sal, acc = explainer.predict(obs * mask[:, :, None, None, None], acts * mask, rewards)
+        preds_sal, acc = explainer.predict(obs * mask_obs, acts * mask_acts, rewards)
         return -np.log(preds_sal), acc, np.abs(preds_sal-preds_orin[0])
     else:
-        preds_sal = explainer.predict(obs * mask[:, :, None, None, None], acts * mask, rewards)
+        preds_sal = explainer.predict(obs * mask_obs, acts * mask_acts, rewards)
         return np.abs(preds_sal-preds_orin)
 
 

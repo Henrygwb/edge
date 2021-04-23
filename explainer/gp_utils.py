@@ -327,9 +327,9 @@ class DGPXRLModel(gpytorch.Module):
         step_embedding, traj_embedding = self.encoder(x, y)  # (N, T, P) -> (N, T, D), (N, D).
         traj_embedding = traj_embedding[:, None, :].repeat(1, self.seq_len, 1) # (N, D) -> (N, T, D)
         features = torch.cat([step_embedding, traj_embedding], dim=-1) # (N, T, 2D)
-        features = features.view(x.size(0)*x.size(1), features.size(-1))
-        res = self.gp_layer(features)
-        return res
+        features_reshaped = features.view(x.size(0)*x.size(1), features.size(-1))
+        res = self.gp_layer(features_reshaped)
+        return res, features
 
 
 class ConstantMean(nn.Module):
@@ -527,7 +527,7 @@ class NNSoftmaxLikelihood(Likelihood):
         if num_features is None:
             raise ValueError("num_features is required with mixing weights")
         self.weight_encoder = nn.Sequential(
-            nn.Linear(input_encoding_dim, num_features),
+            nn.Linear(num_features, num_features),
             nn.LeakyReLU(),
             nn.Linear(num_features, num_features * num_classes)
         )
@@ -559,9 +559,10 @@ class NNSoftmaxLikelihood(Likelihood):
 
         # print('Check the shape of f, should be [n_likelihood_sample, n_traj, traj_length]:')
         # print(function_samples.shape)
-        mixing_weights = self.weight_encoder(args[0])
+        input_encoding = kwargs['input_encoding'].sum(-1)
+        mixing_weights = self.weight_encoder(input_encoding)
         mixing_weights = mixing_weights.view(mixing_weights.shape[0], self.num_features, self.num_classes)
-        mixed_fs = torch.bmm(function_samples, mixing_weights)  # num_classes x num_data
+        mixed_fs = torch.einsum('bxy, xyk->bxk', (function_samples, mixing_weights)) # num_classes x num_data
             # print('Check the shape of fW, should be [n_likelihood_sample, n_traj, n_classes]:')
             # print(mixed_fs.shape)
 

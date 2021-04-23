@@ -124,10 +124,15 @@ class Rudder(object):
                     batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
 
                 obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+
                 if self.n_action == 0:
-                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+                    act_dtype = torch.float32
                 else:
-                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+                    act_dtype = torch.long
+                if len(batch_acts[0].shape) == 2:
+                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
+                else:
+                    acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
 
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
@@ -206,10 +211,15 @@ class Rudder(object):
                 batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
 
             obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+
             if self.n_action == 0:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+                act_dtype = torch.float32
             else:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+                act_dtype = torch.long
+            if len(batch_acts[0].shape) == 2:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
 
             rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
@@ -251,10 +261,15 @@ class Rudder(object):
                 batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
 
             obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+
             if self.n_action == 0:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+                act_dtype = torch.float32
             else:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+                act_dtype = torch.long
+            if len(batch_acts[0].shape) == 2:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
 
             rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
@@ -412,10 +427,15 @@ class Rudder(object):
                 batch_rewards.append(np.load(traj_path + '_traj_' + str(idx) + '.npz')['final_rewards'])
 
             obs = torch.tensor(np.array(batch_obs)[:, self.len_diff:, ...], dtype=torch.float32)
+
             if self.n_action == 0:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.float32)
+                act_dtype = torch.float32
             else:
-                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=torch.long)
+                act_dtype = torch.long
+            if len(batch_acts[0].shape) == 2:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:], dtype=act_dtype)
+            else:
+                acts = torch.tensor(np.array(batch_acts)[:, self.len_diff:, ...], dtype=act_dtype)
 
             rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
             start = timeit.default_timer()
@@ -489,11 +509,18 @@ class Rudder(object):
         nonimportance_id = importance_id_sorted[:, num_fea:]
         nonimportance_id = nonimportance_id.copy()
 
-        mask = torch.ones_like(acts, dtype=torch.long)
-        for j in range(acts.shape[0]):
-            mask[j, nonimportance_id[j,]] = 0
+        mask_obs = torch.ones_like(obs, dtype=torch.float32)
+        mask_acts = torch.ones_like(acts, dtype=torch.long)
 
-        preds_sal = explainer.predict(obs * mask[:, :, None, None, None], acts * mask, rewards)
+        for j in range(acts.shape[0]):
+            if acts.shape == 2:
+                mask_acts[j, nonimportance_id[j,]] = 0
+            else:
+                mask_acts[j, nonimportance_id[j,], ...] = 0
+            mask_obs[j, nonimportance_id[j,], ...] = 0
+
+        preds_sal = explainer.predict(obs * mask_obs, acts * mask_acts, rewards)
+
         abs_diff = np.abs(preds_sal-preds_orin)
         rewards = rewards.cpu().detach().numpy()
         preds_sal = np.abs(preds_sal - rewards)

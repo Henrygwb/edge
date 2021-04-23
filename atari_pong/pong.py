@@ -4,7 +4,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = " "
 import torch
 import numpy as np
 import gym, argparse
-# from explainer.DGP_XRL import DGPXRL
+from explainer.DGP_XRL import DGPXRL
 from explainer.Rudder_XRL import Rudder
 from explainer.RnnAttn_XRL import RnnAttn
 from explainer.gp_utils import VisualizeCovar
@@ -13,7 +13,7 @@ from explainer.RnnSaliency_XRL import RnnSaliency
 from explainer.RationaleNet_XRL import RationaleNet
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--explainer", type=str, default='attention')
+parser.add_argument("--explainer", type=str, default='dgp')
 
 args = parser.parse_args()
 
@@ -21,7 +21,7 @@ args = parser.parse_args()
 # Setup env, load the target agent, and collect the trajectories.
 env_name = 'Pong-v0'
 agent_path = 'agents/{}/'.format(env_name.lower())
-traj_path = 'trajs/' + env_name
+traj_path = 'trajs_test/' + env_name
 # traj_path = None
 num_traj = 30
 max_ep_len = 200
@@ -35,16 +35,16 @@ if traj_path is None:
     _ = model.try_load(agent_path, checkpoint='*.tar')
     torch.manual_seed(1)
 
-    rollout(model, env, num_traj=num_traj, max_ep_len=max_ep_len, save_path='trajs/'+env_name,render=False)
+    rollout(model, env, num_traj=num_traj, max_ep_len=max_ep_len, save_path='trajs_test/'+env_name,render=False)
 
 
 # Get the shared parameters, prepare training/testing data.
 num_class = 2
-seq_len = int(np.load('trajs/' + env_name + '_max_length.npy'))
+seq_len = int(np.load(traj_path + '_max_length.npy'))
 input_dim = 80
 n_action = 7
 len_diff = max_ep_len - seq_len
-total_data_idx = np.arange(int(np.load('trajs/' + env_name + '_num_traj.npy')*0.5)) # np.arange(30)
+total_data_idx = np.arange(int(np.load(traj_path + '_num_traj.npy'))) # np.arange(30)
 train_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0]*0.7):, ]
 exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.1), ]
@@ -319,9 +319,9 @@ elif args.explainer == 'dgp':
     rnn_cell_type = 'GRU'
     optimizer = 'adam'
     num_inducing_points = 20
-    using_ngd = True # Whether to use natural gradient descent.
+    using_ngd = False # Whether to use natural gradient descent.
     using_ksi = False # Whether to use KSI approximation, using this with other options as False.
-    using_ciq = True # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
+    using_ciq = False # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
     using_sor = False # Whether to use SoR approximation, not applicable for KSI and CIQ.
     using_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
@@ -332,7 +332,7 @@ elif args.explainer == 'dgp':
                            grid_bounds=grid_bound, encoder_type=encoder_type, inducing_points=None,
                            mean_inducing_points=None, num_class=num_class, rnn_cell_type=rnn_cell_type,
                            using_ngd=using_ngd, using_ksi=using_ksi, using_ciq=using_ciq, using_sor=using_sor,
-                           using_OrthogonallyDecouple=using_OrthogonallyDecouple)
+                           using_OrthogonallyDecouple=using_OrthogonallyDecouple, weight_x=True)
 
     name = 'dgp_' + likelihood_type + '_' + rnn_cell_type + '_' + \
            str(num_inducing_points)+'_'+ str(using_ngd) + '_' + str(using_ngd) + '_' \
