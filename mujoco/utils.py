@@ -1,13 +1,10 @@
 import glob
-import torch
 import numpy as np
-import torch.nn as nn
 import tensorflow as tf
 import pickle
 import copy
 import gym
 from PIL import Image
-from scipy.misc import imresize
 from abc import ABC, abstractmethod
 from stable_baselines.common.policies import MlpPolicy
 
