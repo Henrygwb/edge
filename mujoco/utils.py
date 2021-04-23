@@ -44,7 +44,7 @@ class NNPolicy(torch.nn.Module): # an actor-critic neural network
         return step
 
 
-def rollout(agent_path, env, num_traj, exp_agent_id=1, max_ep_len=1e3, save_path=None, render=False):
+def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None, exp_agent_id=1, max_ep_len=1e3, save_path=None, render=False):
 
     # load agent-0 / agent-1 
     tf_config = tf.ConfigProto(
@@ -55,17 +55,28 @@ def rollout(agent_path, env, num_traj, exp_agent_id=1, max_ep_len=1e3, save_path
 
     policy = []
     for i in range(2):
-        policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
-                                     ob_space=env.observation_space.spaces[i],
-                                     ac_space=env.action_space.spaces[i],
-                                     hiddens=[64, 64], normalize=True))
+        if agent_type[i] == 'zoo':
+           policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
+                                        ob_space=env.observation_space.spaces[i],
+                                        ac_space=env.action_space.spaces[i],
+                                        hiddens=[64, 64], normalize=True))
+        elif agent_type[i] == 'adv':
+             policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i], 
+                          1, 1, 1, reuse=False))
 
     sess.run(tf.variables_initializer(tf.global_variables()))
-
+    obs_rms = load_from_file(norm_path)
+    
     for i in range(2):
-        param_path = agent_path + '/agent' + str(i + 1) + '_parameters-v1.pkl'
-        param = load_from_file(param_pkl_path=param_path)
-        setFromFlat(policy[i].get_variables(), param)
+        if agent_type[i] == 'zoo':
+           param_path = agent_path + '/agent' + str(i + 1) + '_parameters-v1.pkl'
+           param = load_from_file(param_pkl_path=param_path)
+           setFromFlat(policy[i].get_variables(), param)
+        else:
+           param = load_from_model(agent_path + '/ucb_adv.pkl')
+           adv_agent_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='model')
+           setFromFlat(adv_agent_variables, param)
+
 
     all_obs, all_acts, all_rewards, all_values = [], [], [], []
     max_ep_length = 0
@@ -83,7 +94,12 @@ def rollout(agent_path, env, num_traj, exp_agent_id=1, max_ep_len=1e3, save_path
             values = []
 
             for i, obs in enumerate(observation):
-                act, value = policy[i].act(stochastic=False, observation=obs)
+                if agent_type[i] == 'zoo':
+                   act, value = policy[i].act(stochastic=False, observation=obs)
+                else
+                   obs = np.clip((obs - obs_rms.mean) / np.sqrt(obs_rms.var + 1e-8), -10, 10)
+                   act = policy[i].step(obs=obs[None, :], deterministic=True)[0][0]
+                   value = None
                 actions.append(act)
                 values.append(value)
 
