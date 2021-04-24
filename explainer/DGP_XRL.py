@@ -55,7 +55,7 @@ class DGPXRL(object):
                  gamma, num_inducing_points, n_action=0, encoder_type='MLP', embed_dim=16, inducing_points=None,
                  mean_inducing_points=None, dropout_rate=0.25, num_class=None, rnn_cell_type='GRU', normalize=False,
                  grid_bounds=None, using_ngd=False, using_ksi=False, using_ciq=False, using_sor=False,
-                 using_OrthogonallyDecouple=False, weight_x=False):
+                 using_OrthogonallyDecouple=False, weight_x=False, lambda_1=0.01):
         """
         Define the full model.
         :param train_len: training data length.
@@ -98,12 +98,13 @@ class DGPXRL(object):
         # Build the likelihood layer (Regression and classification).
         if self.likelihood_type == 'regression':
             print('Conduct regression and use GaussianLikelihood')
-            self.likelihood = CustomizedGaussianLikelihood(num_features=seq_len)
+            self.likelihood = CustomizedGaussianLikelihood(num_features=seq_len, weight_x=weight_x)
         elif self.likelihood_type == 'classification':
             print('Conduct classification and use softmaxLikelihood')
             if self.weight_x:
                 print('Varying the mixing weights with an ')
-                self.likelihood = NNSoftmaxLikelihood(num_features=seq_len, num_classes=num_class, input_encoding_dim=hiddens[-1]*2)
+                self.likelihood = NNSoftmaxLikelihood(num_features=seq_len, num_classes=num_class,
+                                                      input_encoding_dim=hiddens[-1]*2)
             else:
                 self.likelihood = CustomizedSoftmaxLikelihood(num_features=seq_len, num_classes=num_class)
         else:
@@ -147,9 +148,9 @@ class DGPXRL(object):
             self.scheduler = optim.lr_scheduler.MultiStepLR(self.variational_ngd_optimizer,
                                                             milestones=[0.5 * self.n_epoch, 0.75 * self.n_epoch],
                                                             gamma=self.gamma)
-            self.scheduler = optim.lr_scheduler.MultiStepLR(self.hyperparameter_optimizer,
-                                                            milestones=[0.5 * self.n_epoch, 0.75 * self.n_epoch],
-                                                            gamma=self.gamma)
+            self.scheduler_hyperparameter = optim.lr_scheduler.MultiStepLR(self.hyperparameter_optimizer,
+                                                                           milestones=[0.5 * self.n_epoch, 0.75 * self.n_epoch],
+                                                                           gamma=self.gamma)
         else:
             if self.optimizer_type == 'adam':
                 self.optimizer = optim.Adam([
@@ -169,6 +170,13 @@ class DGPXRL(object):
             self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizer,
                                                             milestones=[0.5 * self.n_epoch, 0.75 * self.n_epoch],
                                                             gamma=self.gamma)
+
+        self.likelihood_regular_optimizer = optim.Adam([{'params': self.likelihood.parameters()}],
+                                                       lr=self.lr * lambda_1, weight_decay=0)
+
+        self.scheduler_regular = optim.lr_scheduler.MultiStepLR(self.likelihood_regular_optimizer,
+                                                                milestones=[0.5 * self.n_epoch, 0.75 * self.n_epoch],
+                                                                gamma=self.gamma)
 
         if torch.cuda.is_available():
             self.model = self.model.cuda()
@@ -193,7 +201,7 @@ class DGPXRL(object):
         self.likelihood.load_state_dict(likelihood_dict)
         return self.model, self.likelihood
 
-    def train(self, train_idx, test_idx, batch_size, traj_path, lambda_1=0.01, lambda_2=0.01, eps=0.1, local_samples=10,
+    def train(self, train_idx, test_idx, batch_size, traj_path, eps=0.01, local_samples=10,
               save_path=None, likelihood_sample_size=8):
         """
         :param train_idx: training traj index.
@@ -224,6 +232,7 @@ class DGPXRL(object):
             mse = 0
             mae = 0
             loss_sum = 0
+            loss_reg_sum = 0
             preds_all = []
             rewards_all = []
             with gpytorch.settings.use_toeplitz(False):
@@ -263,21 +272,11 @@ class DGPXRL(object):
                         output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
                         if self.weight_x:
                             loss = -self.mll(output, rewards, input_encoding=features)  # approximated ELBO.
-                            weight_output = self.likelihood.weight_encoder(features)
-                            local_perturbations = torch.rand(local_samples, features.shape[0], features.shape[1],
-                                                             features.shape[2]) * 2 * eps - eps
-                            if torch.cuda.is_available():
-                                local_perturbations = local_perturbations.cuda()
-                            perturbed_output = self.likelihood.weight_encoder(features+local_perturbations)
-                            local_linear_loss = torch.abs(weight_output-perturbed_output)
-                            local_linear_loss = local_linear_loss.mean(local_linear_loss.shape[1:])
-                            loss = loss + lambda_2 * local_linear_loss
                         else:
                             loss = -self.mll(output, rewards)  # approximated ELBO.
-                            lasso_term = torch.norm(self.likelihood.mixing_weights, p=1) # lasso
-                            loss = loss + lambda_1 * lasso_term
 
                         loss.backward()
+
                         if self.using_ngd:
                             self.variational_ngd_optimizer.step()
                             self.hyperparameter_optimizer.step()
@@ -285,6 +284,29 @@ class DGPXRL(object):
                             self.optimizer.step()
 
                         loss_sum += loss.item()
+
+                        self.likelihood_regular_optimizer.zero_grad()
+                        if self.weight_x:
+                            output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
+                            features_sum = features.detach().sum(-1)
+                            weight_output = self.likelihood.weight_encoder(features_sum)
+                            weight_output = weight_output.detach()
+                            eps = eps * weight_output.abs().max()
+                            local_perturbations = torch.rand(local_samples, features.shape[0], features.shape[1]) * 2 * eps - eps
+                            if torch.cuda.is_available():
+                                local_perturbations = local_perturbations.cuda()
+                            perturbed_output = self.likelihood.weight_encoder(features_sum+local_perturbations)
+                            local_linear_loss = torch.abs(weight_output-perturbed_output)
+                            local_linear_loss = local_linear_loss.sum((1, 2)).mean()
+                            local_linear_loss.backward()
+                            loss_reg_sum += local_linear_loss
+                        else:
+                            lasso_term = torch.norm(self.likelihood.mixing_weights, p=1) # lasso
+                            lasso_term.backward()
+                            loss_reg_sum +=lasso_term
+
+                        self.likelihood_regular_optimizer.step()
+
                         if self.weight_x:
                             output = self.likelihood(output, input_encoding=features)
                         else:
@@ -297,6 +319,8 @@ class DGPXRL(object):
                             preds = output.mean
                             mae += torch.sum(torch.abs(preds - rewards))
                             mse += torch.sum(torch.square(preds - rewards))
+                    print('ELBO loss {}'.format(loss_sum/n_batch))
+                    print('Regularization loss {}'.format(loss_reg_sum/n_batch))
 
                     if self.likelihood_type == 'classification':
                         preds_all = np.array(preds_all)
@@ -313,6 +337,10 @@ class DGPXRL(object):
                         print('Train MAE: {}'.format(mae / float(self.train_len)))
                         print('Train MSE: {}'.format(mse / float(self.train_len)))
 
+            if self.using_ngd:
+                self.scheduler_hyperparameter.step()
+
+            self.scheduler_regular.step()
             self.scheduler.step()
             # self.test(test_idx, batch_size, traj_path)
             # self.model.train()
@@ -504,28 +532,29 @@ class DGPXRL(object):
             covar_traj = self.model.gp_layer.traj_kernel(features)
 
             if self.weight_x:
-                importance = self.likelihood.mixing_weights(features)
-                importance = importance.resize(importance.shape[0], self.likelihood.num_features,
-                                               self.likelihood.num_classes)
+                input_encoding = features.sum(-1)
+                importance_all = self.likelihood.weight_encoder(input_encoding)
+                importance_all = importance_all.reshape(importance_all.shape[0], self.likelihood.num_features,
+                                                        self.likelihood.num_classes)
             else:
-                importance = self.likelihood.mixing_weights
-                importance = importance.resize(self.likelihood.num_features, self.likelihood.num_classes)
+                importance_all = self.likelihood.mixing_weights
+                importance_all = importance_all.transpose(1, 0)
 
-            importance = importance.cpu().detach().numpy()
+            importance_all = importance_all.cpu().detach().numpy()
 
-            if len(importance.shape) == 2:
-                importance = np.repeat(importance[None, ...], rewards.shape[0], axis=0)
+            if len(importance_all.shape) == 2:
+                importance_all = np.repeat(importance_all[None, ...], rewards.shape[0], axis=0)
 
-            if importance.shape[-1] > 1:
-                importance = importance[list(range(rewards.shape[0])), :,
-                             rewards]  # back from the logit i.e., WF -> W^T
+            if importance_all.shape[-1] > 1:
+                # back from the logit i.e., WF -> W^T
+                importance = importance_all[list(range(rewards.shape[0])), :, rewards]
                 if not logit:
                     # todo: support multi-classes (larger than two).
                     # back from the logit i.e., WF -> W^T
-                    importance_oppo = importance[list(range(rewards.shape[0])), :, (1 - rewards)]
+                    importance_oppo = importance_all[list(range(rewards.shape[0])), :, (1 - rewards)]
                     importance = importance - importance_oppo
             else:
-                importance = np.squeeze(importance, -1)
+                importance = np.squeeze(importance_all, -1)
 
             # TODO: combine importance weight with covariance structure.
 
@@ -656,18 +685,23 @@ class DGPXRL(object):
         step_embedding, traj_embedding = self.model.encoder(obs, acts)  # (N, T, P) -> (N, T, D), (N, D).
         traj_embedding = traj_embedding[:, None, :].repeat(1, obs.shape[1], 1)  # (N, D) -> (N, T, D)
         features = torch.cat([step_embedding, traj_embedding], dim=-1)  # (N, T, 2D)
-        features = features.view(obs.size(0) * obs.size(1), features.size(-1))
-        covar_all = self.model.gp_layer.covar_module(features)
-        covar_step = self.model.gp_layer.step_kernel(features)
-        covar_traj = self.model.gp_layer.traj_kernel(features)
+        features_reshaped = features.view(obs.size(0) * obs.size(1), features.size(-1))
+        covar_all = self.model.gp_layer.covar_module(features_reshaped)
+        covar_step = self.model.gp_layer.step_kernel(features_reshaped)
+        covar_traj = self.model.gp_layer.traj_kernel(features_reshaped)
 
         if self.weight_x:
-            importance_all = self.likelihood.mixing_weights(features)
-            importance_all = importance_all.resize(importance_all.shape[0], self.likelihood.num_features,
-                                                   self.likelihood.num_classes)
+            input_encoding = features.sum(-1)
+            importance_all = self.likelihood.weight_encoder(input_encoding)
+            if self.likelihood_type == 'classification':
+                importance_all = importance_all.view(importance_all.shape[0], self.likelihood.num_features,
+                                                     self.likelihood.num_classes)
+            else:
+                importance_all = importance_all.view(importance_all.shape[0], self.likelihood.num_features, 1)
+
         else:
             importance_all = self.likelihood.mixing_weights.clone()
-            importance_all = importance_all.resize(self.likelihood.num_features, self.likelihood.num_classes)
+            importance_all = importance_all.transpose(1, 0)
 
         importance_all = importance_all.cpu().detach().numpy()
 
@@ -682,7 +716,7 @@ class DGPXRL(object):
                 importance_oppo = importance_all[list(range(rewards.shape[0])), :, (1-rewards)]
                 importance = importance - importance_oppo
         else:
-            importance = np.squeeze(importance, -1)
+            importance = np.squeeze(importance_all, -1)
 
         # TODO: combine importance weight with covariance structure.
 

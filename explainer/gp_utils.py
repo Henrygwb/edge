@@ -576,9 +576,11 @@ class CustomizedGaussianLikelihood(Likelihood):
     Assumes a standard homoskedastic (variance of the residual is constant) and IID noise model.
     p(y \mid f) = fW + \epsilon, \quad \epsilon \sim \mathcal N (0, \sigma^2)
     """
-    def __init__(self, num_features, noise_prior=None, noise_constraint=None, batch_shape=torch.Size(), **kwargs):
+    def __init__(self, num_features, weight_x=False,
+                 noise_prior=None, noise_constraint=None, batch_shape=torch.Size(), **kwargs):
         """
         :param num_features: trajectory length.
+        :param weight_x: mixing weight depends on x.
         :param noise_prior: Prior for noise parameter :math:`\sigma^2`.
         :param noise_constraint: Constraint for noise parameter :math:`\sigma^2`.
         :param batch_shape: The batch shape of the learned noise parameter (default: []).
@@ -587,10 +589,19 @@ class CustomizedGaussianLikelihood(Likelihood):
         self.noise_covar = HomoskedasticNoise(
             noise_prior=noise_prior, noise_constraint=noise_constraint, batch_shape=batch_shape
         )
-        self.register_parameter(
-            name="mixing_weights",
-            parameter=torch.nn.Parameter(torch.randn(1, num_features).div_(num_features)),
-        )
+        self.weight_x = weight_x
+
+        if self.weight_x:
+            self.weight_encoder = nn.Sequential(
+                nn.Linear(num_features, num_features),
+                nn.LeakyReLU(),
+                nn.Linear(num_features, num_features)
+            )
+        else:
+            self.register_parameter(
+                name="mixing_weights",
+                parameter=torch.nn.Parameter(torch.randn(1, num_features).div_(num_features)),
+            )
         self.num_features = num_features
 
     def _shaped_noise_covar(self, base_shape: torch.Size, *params, **kwargs):
@@ -641,6 +652,12 @@ class CustomizedGaussianLikelihood(Likelihood):
         :param kwargs: any
         :return: E_{f~q(f)}[log p(y|f)].
         """
+        if self.weight_x:
+            input_encoding = kwargs['input_encoding'].sum(-1)
+            mixing_weights = self.weight_encoder(input_encoding)
+            mixing_weights = mixing_weights.view(mixing_weights.shape[0], 1, self.num_features)
+            self.mixing_weights = mixing_weights.mean(0)
+
         mean, covar = input.mean, input.covariance_matrix # mean and covar of q(f).
         # num_event_dim = len(input.event_shape)
         num_data = int(mean.shape[0]/self.num_features)
@@ -703,9 +720,16 @@ class CustomizedGaussianLikelihood(Likelihood):
         :param function_samples: f sampled from q(f).
         :return: p(y|f).
         """
+        if self.weight_x:
+            input_encoding = kwargs['input_encoding'].sum(-1)
+            mixing_weights = self.weight_encoder(input_encoding)
+            mixing_weights = mixing_weights.view(mixing_weights.shape[0], 1, self.num_features)
+            self.mixing_weights = mixing_weights.mean(0)
+
         num_data, num_features = function_samples.shape[-2:]
         function_samples = function_samples.view(function_samples.size(0),
                                                    num_data/self.num_features, self.num_features) # (N_sample, n, T)
+
         function_samples = function_samples @ self.mixing_weights # (N_sample, n, 1)
         noise = self._shaped_noise_covar(function_samples.shape, *params, **kwargs).diag()
         return base_distributions.Normal(function_samples, noise.sqrt())
@@ -735,6 +759,12 @@ class CustomizedGaussianLikelihood(Likelihood):
         :return: p(y^{*}|x^{*}) = N(fw^(T), \epsilon), fw^(T) ~ N(E[fW^{t}], Var[fW^{t}]),
                  cov[fW^{t}]_{ij}= W\Sigma_{i*T:(i+1)*T, j*T:(j+1)*T}W^{T}.
         """
+        if self.weight_x:
+            input_encoding = kwargs['input_encoding'].sum(-1)
+            mixing_weights = self.weight_encoder(input_encoding)
+            mixing_weights = mixing_weights.view(mixing_weights.shape[0], 1, self.num_features)
+            self.mixing_weights = mixing_weights.mean(0)
+
         mean, covar = function_dist.mean, function_dist.lazy_covariance_matrix
         num_data = int(mean.shape[0]/self.num_features)
         mean = mean.view(num_data, self.num_features)

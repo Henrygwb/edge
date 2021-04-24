@@ -55,7 +55,7 @@ rnn_cell_type = 'GRU'
 n_epoch = 2
 batch_size = 4
 save_path = 'exp_model_results/'
-likelihood_type = 'classification'
+likelihood_type = 'regression'
 n_stab_samples = 10
 
 if args.explainer == 'value':
@@ -326,9 +326,8 @@ elif args.explainer == 'dgp':
     using_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
     weight_x = True
-    logit = True
+    logit = False
     lambda_1 = 0.01
-    lambda_2 = 0.02
     local_samples = 10
     likelihood_sample_size = 8
 
@@ -338,23 +337,24 @@ elif args.explainer == 'dgp':
                            grid_bounds=grid_bound, encoder_type=encoder_type, inducing_points=None,
                            mean_inducing_points=None, num_class=num_class, rnn_cell_type=rnn_cell_type,
                            using_ngd=using_ngd, using_ksi=using_ksi, using_ciq=using_ciq, using_sor=using_sor,
-                           using_OrthogonallyDecouple=using_OrthogonallyDecouple, weight_x=weight_x)
+                           using_OrthogonallyDecouple=using_OrthogonallyDecouple, weight_x=weight_x, lambda_1=lambda_1)
 
     name = 'dgp_' + likelihood_type + '_' + rnn_cell_type + '_' + \
            str(num_inducing_points)+'_'+ str(using_ngd) + '_' + str(using_ngd) + '_' \
            + str(using_ksi) + '_' + str(using_ciq) + '_' + str(using_sor) + '_' \
-           + str(using_OrthogonallyDecouple) + str(weight_x) + str(logit)
+           + str(using_OrthogonallyDecouple) + '_' + str(weight_x) + '_' + str(lambda_1) + '_' \
+           + str(local_samples) + '_' + str(likelihood_sample_size) + '_' + str(logit)
 
-    dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, lambda_1=lambda_1, lambda_2=lambda_2,
-                        local_samples=local_samples, likelihood_sample_size=likelihood_sample_size,
-                        save_path=save_path+name+'_model.data')
-
-    dgp_explainer.test(test_idx, batch_size, traj_path)
+    # dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, local_samples=local_samples,
+    #                     likelihood_sample_size=likelihood_sample_size,
+    #                     save_path=save_path+name+'_model.data')
+    #
+    # dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
     dgp_explainer.load(save_path+name+'_model.data')
-    dgp_explainer.test(test_idx, batch_size, traj_path)
+    dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
 
     sal_rationale_all, covar_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = dgp_explainer.exp_fid_stab(
-        exp_idx, batch_size, traj_path, logit=False, n_stab_samples=n_stab_samples)
+        exp_idx, batch_size, traj_path, logit=logit, n_stab_samples=n_stab_samples)
 
     print('=============================================')
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
