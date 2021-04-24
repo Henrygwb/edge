@@ -292,9 +292,10 @@ class DGPXRL(object):
                             weight_output = self.likelihood.weight_encoder(features_sum)
                             weight_output = weight_output.detach()
                             eps = eps * weight_output.abs().max()
-                            local_perturbations = torch.rand(local_samples, features.shape[0], features.shape[1]) * 2 * eps - eps
+                            local_perturbations = torch.rand(local_samples, features.shape[0], features.shape[1])
                             if torch.cuda.is_available():
                                 local_perturbations = local_perturbations.cuda()
+                            local_perturbations = local_perturbations * 2 * eps - eps
                             perturbed_output = self.likelihood.weight_encoder(features_sum+local_perturbations)
                             local_linear_loss = torch.abs(weight_output-perturbed_output)
                             local_linear_loss = local_linear_loss.sum((1, 2)).mean()

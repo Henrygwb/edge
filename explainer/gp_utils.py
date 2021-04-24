@@ -163,7 +163,7 @@ class MlpRnnEncoder(nn.Module):
             mean = torch.mean(x, dim=(0, 1))[None, None, :]
             std = torch.std(x, dim=(0, 1))[None, None, :]
             x = (x - mean)/std
-        x = torch.cat((x, y[..., None]), -1)
+        x = torch.cat((x, y), -1)
         mlp_encoded = self.encoder(x) # (N, T, Hiddens[-2]) get the hidden representation of every time step.
         if self.rnn_cell_type == 'GRU':
             step_embed, traj_embed = self.rnn(mlp_encoded, h0)
