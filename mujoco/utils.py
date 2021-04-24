@@ -43,7 +43,7 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
            setFromFlat(adv_agent_variables, param)
 
     max_ep_length = 0
-    traj_count = 3164
+    traj_count = 0
     for i in range(num_traj):
         print('Traj %d out of %d.' %(i, num_traj))
         cur_obs, cur_states, cur_acts, cur_rewards, cur_values = [], [], [], [], []
