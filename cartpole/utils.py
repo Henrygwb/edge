@@ -50,7 +50,7 @@ def rollout(agent_path, env, num_traj, max_ep_len=1e3, save_path=None, render=Fa
             assert len(cur_states) == max_ep_len
             
             elem_acts = cur_acts[-1]
-            padding_elem_acts = np.zeros_like(elem_acts)
+            padding_elem_acts = np.ones_like(elem_acts) * -1
             for _ in range(padding_amt):
                 cur_acts.insert(0, padding_elem_acts)
             assert len(cur_acts) == max_ep_len
@@ -70,13 +70,13 @@ def rollout(agent_path, env, num_traj, max_ep_len=1e3, save_path=None, render=Fa
             acts = np.array(cur_acts)
             rewards = np.array(cur_rewards)
             values = np.array(cur_values)
-
+            
+            acts += 1
             # discounted_reward / sum_reward / last reward
             gamma = 0.99
             discounted_rewards = 0
             sum_rewards = 0
             factor = 1.0
-
             for i in range(padding_amt, len(cur_rewards)):
                 sum_rewards += cur_rewards[i]
                 discounted_rewards += factor * cur_rewards[i]
