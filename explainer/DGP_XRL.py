@@ -876,7 +876,7 @@ class DGPXRL(object):
             self.model, self.likelihood = self.model.cuda(), self.likelihood.cuda()
 
         f_predicted, features = self.model(obs, acts)
-        function_samples = f_predicted.rsample(torch.Size([8]))
+        function_samples = f_predicted.rsample(torch.Size([8])).cpu().detach()
         function_samples = function_samples.view(function_samples.size(0), rewards.shape[0], obs.shape[1])
         if self.weight_x:
             input_encoding = features.sum(-1)
