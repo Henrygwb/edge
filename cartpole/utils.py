@@ -1,4 +1,5 @@
-from stable_baselines.common import PPO2
+import numpy as np
+from stable_baselines import PPO2
 
 def rollout(agent_path, env, num_traj, max_ep_len=1e3, save_path=None, render=False):
 
@@ -28,12 +29,12 @@ def rollout(agent_path, env, num_traj, max_ep_len=1e3, save_path=None, render=Fa
             #state = env.render(mode='rgb_array')
             # save info
             #cur_obs.append(state)
-            cur_states.append(observation[exp_agent_id])
-            cur_acts.append(actions[exp_agent_id])
+            cur_states.append(observation)
+            cur_acts.append(action)
             cur_rewards.append(reward)
-            cur_values.append(values[exp_agent_id])
+            cur_values.append(value)
 
-        print('step %d, reward %.f, value %.4f' %(episode_length, epr, values[exp_agent_id]))
+        print('step %d, reward %.f, value %.4f' %(episode_length, epr, value))
 
         if epr != 0:
             max_ep_length = max(len(cur_rewards), max_ep_length)
@@ -70,7 +71,7 @@ def rollout(agent_path, env, num_traj, max_ep_len=1e3, save_path=None, render=Fa
             rewards = np.array(cur_rewards)
             values = np.array(cur_values)
 
-            # discounted_sum / sum_reward / last reward
+            # discounted_reward / sum_reward / last reward
             gamma = 0.99
             discounted_rewards = 0
             sum_rewards = 0
@@ -80,12 +81,11 @@ def rollout(agent_path, env, num_traj, max_ep_len=1e3, save_path=None, render=Fa
                 sum_rewards += cur_rewards[i]
                 discounted_rewards += factor * cur_rewards[i]
                 factor *= gamma 
-            final_rewards = rewards[-1].astype('int32')  # get the final reward of each traj.
+            final_rewards = rewards[-1].astype('float32')  # get the final reward of each traj.
             #print(final_rewards)
             np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz', 
                                 actions=acts, values=values, states=states, rewards=rewards, final_rewards=final_rewards, 
                                 discounted_rewards=discounted_rewards, sum_rewards=sum_rewards)
             traj_count += 1
-
     np.save(save_path + '_max_length_.npy', max_ep_length)
     np.save(save_path + '_num_traj_.npy', traj_count)
