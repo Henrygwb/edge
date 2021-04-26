@@ -769,21 +769,21 @@ class DGPXRL(object):
             preds_orin = self.predict(obs, acts, rewards)
             if self.likelihood_type == 'classification':
                 fid_1, acc_1_temp, abs_diff_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal, preds_orin)
-                fid_2, acc_2_temp, abs_diff_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin,
-                                                                int(obs.shape[1] * 0.05))
-                fid_3, acc_3_temp, abs_diff_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin,
-                                                                int(obs.shape[1] * 0.15))
-                fid_4, acc_4_temp, abs_diff_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin,
-                                                                int(obs.shape[1] * 0.25))
+                fid_2, acc_2_temp, abs_diff_2 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin,
+                                                                     int(obs.shape[1] * 0.05))
+                fid_3, acc_3_temp, abs_diff_3 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin,
+                                                                     int(obs.shape[1] * 0.15))
+                fid_4, acc_4_temp, abs_diff_4 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin,
+                                                                     int(obs.shape[1] * 0.25))
                 acc_1 += acc_1_temp
                 acc_2 += acc_2_temp
                 acc_3 += acc_3_temp
                 acc_4 += acc_4_temp
             else:
                 fid_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal, preds_orin)
-                fid_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1] * 0.05))
-                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1] * 0.25))
-                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1] * 0.5))
+                fid_2 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin, int(obs.shape[1] * 0.05))
+                fid_3 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin, int(obs.shape[1] * 0.15))
+                fid_4 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin, int(obs.shape[1] * 0.25))
 
             stab = self.exp_stablity(obs, acts, rewards, sal, n_stab_samples, eps)
             fid = np.concatenate((fid_1[None,], fid_2[None,], fid_3[None,], fid_4[None,]))
@@ -852,6 +852,58 @@ class DGPXRL(object):
 
         return stab
 
+    def exp_fid2nn_topk(self, obs, acts, rewards, saliency, preds_orin, num_fea):
+        obs.requires_grad = False
+        acts.requires_grad = False
+
+        if type(saliency) == torch.Tensor:
+            saliency = saliency.cpu().detach().numpy()
+
+        importance_id_sorted = np.argsort(saliency, axis=1)[:, ::-1] # high to low.
+        nonimportance_id = importance_id_sorted[:, num_fea:]
+        nonimportance_id = nonimportance_id.copy()
+
+        self.model.eval()
+        self.likelihood.eval()
+
+        if torch.cuda.is_available():
+            obs, acts = obs.cuda(), acts.cuda()
+            self.model, self.likelihood = self.model.cuda(), self.likelihood.cuda()
+
+        f_predicted, features = self.model(obs, acts)
+        function_samples = f_predicted.rsample(torch.Size([8]))
+        function_samples = function_samples.view(function_samples.size(0), rewards.shape[0], obs.shape[1])
+        if self.weight_x:
+            input_encoding = features.sum(-1)
+            mixing_weights = self.likelihood.weight_encoder(input_encoding)
+        else:
+            mixing_weights = self.likelihood.mixing_weights.cpu().detach()
+            mixing_weights = mixing_weights.t()
+            mixing_weights = mixing_weights.repeat(rewards.shape[0], 1, 1)
+        for i in range(rewards.shape[0]):
+            mixing_weights[i, nonimportance_id[i], rewards[i]] = 0
+        mixed_fs = torch.einsum('bxy, xyk->bxk', (function_samples, mixing_weights)) # num_classes x num_data
+
+        if self.likelihood_type == 'classification':
+            output = torch.nn.functional.softmax(mixed_fs, dim=-1)
+            preds = output.mean(0)
+        else:
+            output = mixed_fs
+            preds = output.mean
+
+        preds = preds.cpu().detach().numpy()
+
+        if self.likelihood_type == 'classification':
+            preds_labels = np.argmax(preds, 1)
+            preds = preds[list(range(rewards.shape[0])), rewards]
+            acc = accuracy_score(rewards, preds_labels)
+            if len(preds.shape) == 2:
+                preds = preds.flatten()
+            return -np.log(preds), acc, np.abs(preds - preds_orin[0])
+        else:
+            if len(preds.shape) == 2:
+                preds = preds.flatten()
+            return np.abs(preds-preds_orin)
 
 
 # All the keys in the state_dict.

@@ -557,8 +557,8 @@ class RnnAttn(object):
             else:
                 fid_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal, preds_orin)
                 fid_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.05))
-                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.25))
-                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.5))
+                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.15))
+                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.25))
 
             stab = exp_stablity(obs, acts, rewards, self, sal, n_stab_samples, eps)
             fid = np.concatenate((fid_1[None,], fid_2[None,], fid_3[None,], fid_4[None,]))
