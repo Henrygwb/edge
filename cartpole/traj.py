@@ -1,6 +1,6 @@
 import numpy as np
 from stable_baselines.common import make_vec_env
-from cartpole.utils import rollout
+from utils import rollout
 
 env_name = 'CartPole-v1'
 agent_path = 'agents/ppo2_cartpole.zip'
