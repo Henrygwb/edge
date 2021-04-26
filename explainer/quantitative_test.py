@@ -88,7 +88,7 @@ def draw_fid_fig(metric_values, save_path):
     value_list = []
     explainer_list = []
 
-    for metric_type in ['ZeroOne', 'Top10', 'Top25', 'Top50']:
+    for metric_type in ['ZeroOne', 'Top5', 'Top15', 'Top25']:
 
         for i in range(metric_values.shape[2]):
             label_list.append(metric_type)

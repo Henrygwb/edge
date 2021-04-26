@@ -6,4 +6,3 @@ logs/
 .DS_Store
 __pycache__/
 explainer/ref_code/
-models/

@@ -127,3 +127,37 @@ def rollout(model, env, num_traj, max_ep_len=1e3, save_path=None, render=False):
 
     np.save(save_path + '_max_length.npy', max_ep_length)
     np.save(save_path + '_num_traj.npy', traj_count)
+
+
+def run_reproduce(env, original_traj, importance, num_importance, max_ep_len=1e3, render=False):
+
+    acts_orin = original_traj['actions']
+    obs_orin = original_traj['observations']
+    states_orin = original_traj['states']
+    rewards_orin = original_traj['rewards']
+
+    traj_len = np.count_nonzero(acts_orin)
+    start_step = max_ep_len - traj_len
+
+    cur_obs, cur_acts, cur_rewards, cur_values = [], [], [], []
+    env.reset()  # get first state
+    episode_length, epr, eploss, done = 0, 0, 0, False  # bookkeeping
+
+    for i in range(traj_len):
+        action = acts_orin[start_step+i]
+        if start_step+i in importance[:num_importance]:
+            action = 1
+        obs, reward, done, expert_policy = env.step(action-1)
+        if env.env.game == 'pong':
+            done = reward
+        if render: env.render()
+        epr += reward
+
+        # save info!
+        cur_obs.append(obs)
+        cur_acts.append(action)
+        cur_rewards.append(reward)
+        episode_length += 1
+
+    print('step # {}, reward {:.0f}.'.format(traj_len, epr))
+    return cur_rewards[-1]

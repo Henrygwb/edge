@@ -881,6 +881,8 @@ class DGPXRL(object):
         if self.weight_x:
             input_encoding = features.sum(-1)
             mixing_weights = self.likelihood.weight_encoder(input_encoding)
+            mixing_weights = mixing_weights.view(mixing_weights.shape[0], obs.shape[1], self.likelihood.num_classes)
+            mixing_weights = mixing_weights.cpu().detach()
         else:
             mixing_weights = self.likelihood.mixing_weights.cpu().detach()
             mixing_weights = mixing_weights.t()
