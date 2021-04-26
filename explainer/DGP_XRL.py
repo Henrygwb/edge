@@ -802,7 +802,7 @@ class DGPXRL(object):
                 covar_traj_all = cov[1][None, ...]
                 covar_step_all = cov[2][None, ...]
                 abs_diff_all = abs_diff
-            else:
+            elif batch < 5:
                 sal_all = np.vstack((sal_all, sal))
                 fid_all = np.concatenate((fid_all, fid), axis=1)
                 stab_all = np.concatenate((stab_all, stab))
@@ -810,6 +810,11 @@ class DGPXRL(object):
                 covar_traj_all = np.concatenate((covar_traj_all, cov[1][None, ...]))
                 covar_step_all = np.concatenate((covar_step_all, cov[2][None, ...]))
                 abs_diff_all = np.concatenate((abs_diff_all, abs_diff), axis=1)
+            else:
+                abs_diff_all = np.concatenate((abs_diff_all, abs_diff), axis=1)
+                sal_all = np.vstack((sal_all, sal))
+                fid_all = np.concatenate((fid_all, fid), axis=1)
+                stab_all = np.concatenate((stab_all, stab))
 
         mean_time = sum_time / exp_idx.shape[0]
         acc_1 = acc_1 / n_batch
