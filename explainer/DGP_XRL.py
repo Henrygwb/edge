@@ -299,14 +299,14 @@ class DGPXRL(object):
                             perturbed_output = self.likelihood.weight_encoder(features_sum+local_perturbations)
                             local_linear_loss = torch.abs(weight_output-perturbed_output)
                             local_linear_loss = local_linear_loss.sum((1, 2)).mean()
-                            local_linear_loss.backward()
+                            # local_linear_loss.backward()
                             loss_reg_sum += local_linear_loss
                         else:
                             lasso_term = torch.norm(self.likelihood.mixing_weights, p=1) # lasso
                             lasso_term.backward()
                             loss_reg_sum +=lasso_term
 
-                        self.likelihood_regular_optimizer.step()
+                        # self.likelihood_regular_optimizer.step()
 
                         if self.weight_x:
                             output = self.likelihood(output, input_encoding=features)
@@ -341,12 +341,13 @@ class DGPXRL(object):
             if self.using_ngd:
                 self.scheduler_hyperparameter.step()
 
-            self.scheduler_regular.step()
             self.scheduler.step()
+            # self.scheduler_regular.step()
             # self.test(test_idx, batch_size, traj_path)
             # self.model.train()
             # self.likelihood.train()
-
+            # if epoch % 20 == 0:
+            #     self.save(save_path + '_' + str(epoch) + '_model.data')
         if save_path:
             self.save(save_path)
         return self.model

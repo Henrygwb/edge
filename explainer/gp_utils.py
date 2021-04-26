@@ -305,9 +305,11 @@ class DGPXRLModel(gpytorch.Module):
             self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
 
         if inducing_points is None:
-            inducing_points = torch.randn(num_inducing_points, 2*hiddens[-1])
+            inducing_points = torch.randn(num_inducing_points, 2*hiddens[-1]) # Pong game.
+            # inducing_points = torch.rand(num_inducing_points, 2 * hiddens[-1]) # MuJoCo game.
         if mean_inducing_points is None:
             mean_inducing_points = torch.randn(num_inducing_points*5, 2*hiddens[-1])
+            # inducing_points = torch.rand(num_inducing_points*5, 2 * hiddens[-1]) # MuJoCo game.
 
         self.gp_layer = GaussianProcessLayer(input_dim_step=hiddens[-1], input_dim_traj=hiddens[-1],
                                              num_inducing_points=num_inducing_points, inducing_points=inducing_points,
@@ -315,6 +317,7 @@ class DGPXRLModel(gpytorch.Module):
                                              likelihood_type=likelihood_type, using_ngd=using_ngd, using_ksi=using_ksi,
                                              using_ciq=using_ciq, using_sor=using_sor,
                                              using_OrthogonallyDecouple=using_OrthogonallyDecouple)
+        self.batch_norm = nn.BatchNorm1d(hiddens[-1]*2)
 
     def forward(self, x, y):
         """
@@ -328,6 +331,7 @@ class DGPXRLModel(gpytorch.Module):
         traj_embedding = traj_embedding[:, None, :].repeat(1, self.seq_len, 1) # (N, D) -> (N, T, D)
         features = torch.cat([step_embedding, traj_embedding], dim=-1) # (N, T, 2D)
         features_reshaped = features.view(x.size(0)*x.size(1), features.size(-1))
+        # features_reshaped = self.batch_norm(features_reshaped)
         res = self.gp_layer(features_reshaped)
         return res, features
 

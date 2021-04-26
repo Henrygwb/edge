@@ -7,7 +7,6 @@ import gym, argparse
 from explainer.DGP_XRL import DGPXRL
 from explainer.Rudder_XRL import Rudder
 from explainer.RnnAttn_XRL import RnnAttn
-from explainer.gp_utils import VisualizeCovar
 from atari_pong.utils import NNPolicy, rollout
 from explainer.RnnSaliency_XRL import RnnSaliency
 from explainer.RationaleNet_XRL import RationaleNet
@@ -52,10 +51,10 @@ exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.5), ]
 hiddens = [4]
 encoder_type = 'CNN'
 rnn_cell_type = 'GRU'
-n_epoch = 2
-batch_size = 4
+n_epoch = 100
+batch_size = 40
 save_path = 'exp_model_results/'
-likelihood_type = 'regression'
+likelihood_type = 'classification'
 n_stab_samples = 10
 
 if args.explainer == 'value':
@@ -316,17 +315,16 @@ elif args.explainer == 'rationale':
 
 elif args.explainer == 'dgp':
     # Explainer 6 - DGP.
-    rnn_cell_type = 'GRU'
     optimizer = 'adam'
-    num_inducing_points = 20
+    num_inducing_points = 100
     using_ngd = False # Whether to use natural gradient descent.
     using_ksi = False # Whether to use KSI approximation, using this with other options as False.
     using_ciq = False # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
     using_sor = False # Whether to use SoR approximation, not applicable for KSI and CIQ.
     using_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
-    weight_x = True
-    logit = False
+    weight_x = False
+    logit = True
     lambda_1 = 0.01
     local_samples = 10
     likelihood_sample_size = 8
@@ -345,11 +343,11 @@ elif args.explainer == 'dgp':
            + str(using_OrthogonallyDecouple) + '_' + str(weight_x) + '_' + str(lambda_1) + '_' \
            + str(local_samples) + '_' + str(likelihood_sample_size) + '_' + str(logit)
 
-    # dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, local_samples=local_samples,
-    #                     likelihood_sample_size=likelihood_sample_size,
-    #                     save_path=save_path+name+'_model.data')
-    #
-    # dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
+    dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, local_samples=local_samples,
+                        likelihood_sample_size=likelihood_sample_size,
+                        save_path=save_path+name+'_model.data')
+
+    dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
     dgp_explainer.load(save_path+name+'_model.data')
     dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
 

@@ -37,11 +37,11 @@ train_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0]*0.7):, ]
 exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.1), ]
 
-hiddens = [64, 64]
+hiddens = [64, 32, 8]
 encoder_type = 'MLP'
 rnn_cell_type = 'GRU'
 n_epoch = 200
-batch_size = 200
+batch_size = 40
 save_path = 'exp_model_results/'
 likelihood_type = 'classification'
 n_stab_samples = 10
@@ -304,9 +304,8 @@ elif args.explainer == 'rationale':
 
 elif args.explainer == 'dgp':
     # Explainer 6 - DGP.
-    rnn_cell_type = 'GRU'
     optimizer = 'adam'
-    num_inducing_points = 20
+    num_inducing_points = 600
     using_ngd = False # Whether to use natural gradient descent.
     using_ksi = False # Whether to use KSI approximation, using this with other options as False.
     using_ciq = False # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
@@ -315,10 +314,9 @@ elif args.explainer == 'dgp':
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
     weight_x = True
     logit = True
-    lambda_1 = 0.01
-    lambda_2 = 0.02
+    lambda_1 = 1e-5
     local_samples = 10
-    likelihood_sample_size = 8
+    likelihood_sample_size = 16
 
     dgp_explainer = DGPXRL(train_len=train_idx.shape[0], seq_len=seq_len, len_diff=len_diff, input_dim=input_dim,
                            hiddens=hiddens, likelihood_type=likelihood_type, lr=0.01, optimizer_type=optimizer,
@@ -326,20 +324,20 @@ elif args.explainer == 'dgp':
                            grid_bounds=grid_bound, encoder_type=encoder_type, inducing_points=None,
                            mean_inducing_points=None, num_class=num_class, rnn_cell_type=rnn_cell_type,
                            using_ngd=using_ngd, using_ksi=using_ksi, using_ciq=using_ciq, using_sor=using_sor,
-                           using_OrthogonallyDecouple=using_OrthogonallyDecouple, weight_x=weight_x)
+                           using_OrthogonallyDecouple=using_OrthogonallyDecouple, weight_x=weight_x, lambda_1=lambda_1)
 
     name = 'dgp_' + likelihood_type + '_' + rnn_cell_type + '_' + \
            str(num_inducing_points)+'_'+ str(using_ngd) + '_' + str(using_ngd) + '_' \
            + str(using_ksi) + '_' + str(using_ciq) + '_' + str(using_sor) + '_' \
            + str(using_OrthogonallyDecouple) + str(weight_x) + str(logit)
 
-    dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, lambda_1=lambda_1, lambda_2=lambda_2,
+    dgp_explainer.train(train_idx, test_idx, batch_size, traj_path,
                         local_samples=local_samples, likelihood_sample_size=likelihood_sample_size,
                         save_path=save_path+name+'_model.data')
 
-    dgp_explainer.test(test_idx, batch_size, traj_path)
+    dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
     dgp_explainer.load(save_path+name+'_model.data')
-    dgp_explainer.test(test_idx, batch_size, traj_path)
+    dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size,)
 
     sal_rationale_all, covar_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = dgp_explainer.exp_fid_stab(
         exp_idx, batch_size, traj_path, logit=False, n_stab_samples=n_stab_samples)
