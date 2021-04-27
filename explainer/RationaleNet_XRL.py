@@ -239,9 +239,6 @@ class RationaleNet(object):
         self.encoder.eval()
         self.likelihood.eval()
         self.generator.eval()
-        self.encoder = self.encoder.cpu()
-        self.likelihood = self.likelihood.cpu()
-        self.generator = self.generator.cpu()
 
         mse = 0
         mae = 0
@@ -278,7 +275,7 @@ class RationaleNet(object):
             if torch.cuda.is_available():
                 obs, acts = obs.cuda(), acts.cuda()
 
-            z = self.generator(obs, acts)
+            z = self.generator(obs, acts).detach()
             output = self.encoder(obs, acts, z)[:, -1, :]
             preds = self.likelihood(output).cpu().detach()
 

@@ -3,24 +3,15 @@ sys.path.append('..')
 os.environ["CUDA_VISIBLE_DEVICES"] = " "
 import gym
 import numpy as np
-from atari_pong.utils import run_reproduce
+from atari_pong.utils import rl_fed
 
-
-# Setup env, load the target agent, and collect the trajectories.
-env_name = 'Pong-v0'
-agent_path = 'agents/{}/'.format(env_name.lower())
-traj_path = 'trajs_exp/' + env_name
-max_ep_len = 200
-
-# Get the shared parameters, prepare training/testing data.
 encoder_type = 'CNN'
 rnn_cell_type = 'GRU'
-save_path = 'exp_model_results/'
+save_path = 'exp_results/'
 likelihood_type = 'classification'
 
 # Explainer 1 - Value function.
 sal_value = np.load(save_path + 'value_exp.npz')['sal'][0:2120]
-
 
 # Explainer 2 - Rudder.
 name = 'rudder_' + encoder_type + '_' + rnn_cell_type
@@ -52,41 +43,53 @@ rat_fid = rat_fid_results['fid']
 rat_stab = rat_fid_results['stab']
 
 # Explainer 6 - DGP.
-dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_exp.npz')
-dgp_1_sal = dgp_1_fid_results['sal']
-dgp_1_fid = dgp_1_fid_results['fid']
-dgp_1_stab = dgp_1_fid_results['stab']
-
-dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_False_0.1_10_8_True_exp.npz')
-dgp_2_sal = dgp_2_fid_results['sal']
-dgp_2_fid = dgp_2_fid_results['fid']
-dgp_2_stab = dgp_2_fid_results['stab']
-
-dgp_3_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_exp.npz')
-dgp_3_sal = dgp_3_fid_results['sal']
-dgp_3_fid = dgp_3_fid_results['fid']
-dgp_3_stab = dgp_3_fid_results['stab']
-
+# dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_exp.npz')
+# dgp_1_sal = dgp_1_fid_results['sal']
+# dgp_1_fid = dgp_1_fid_results['fid']
+# dgp_1_stab = dgp_1_fid_results['stab']
+#
+# dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_False_0.1_10_8_True_exp.npz')
+# dgp_2_sal = dgp_2_fid_results['sal']
+# dgp_2_fid = dgp_2_fid_results['fid']
+# dgp_2_stab = dgp_2_fid_results['stab']
+#
+# dgp_3_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_exp.npz')
+# dgp_3_sal = dgp_3_fid_results['sal']
+# dgp_3_fid = dgp_3_fid_results['fid']
+# dgp_3_stab = dgp_3_fid_results['stab']
 
 # Model Fid/Stab figures.
 
 
 # RL fid figures.
+env_name = 'Pong-v0'
+max_ep_len = 200
+traj_path = 'trajs_exp/' + env_name
+
 env = gym.make(env_name)
 env.seed(1)
-env.env.frameskip = 4
-diff_all = []
-for i in range(1100):
-    print('============')
-    print(i)
-    original_traj = np.load('trajs_exp/Pong-v0_traj_{}.npz'.format(i))
-    reply_reward = run_reproduce(env, original_traj=original_traj, max_ep_len=max_ep_len, render=False)
-    orin_reward = original_traj['final_rewards']
-    if orin_reward == 0:
-        orin_reward = -1
-    diff_all.append((reply_reward-orin_reward))
-print(np.count_nonzero(diff_all))
+env.env.frameskip = 3
+num_trajs = 1000
+diff_all = np.zeros((5, num_trajs))
+exps_all = [sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
+for k in range(5):
+    print(k)
+    importance = exps_all[k]
+    for i in range(num_trajs):
+        print(i)
+        diff = 0
+        importance_traj = np.argsort(importance[i,])[::-1]
+        original_traj = np.load('trajs_exp/Pong-v0_traj_{}.npz'.format(i))
+        for j in range(5):
+            reply_reward_orin = rl_fed(env, original_traj=original_traj, max_ep_len=max_ep_len,
+                                       importance=importance_traj, num_step=10, render=False, mask_act=False)
+            reply_reward_perturbed = rl_fed(env, original_traj=original_traj, max_ep_len=max_ep_len,
+                                            importance=importance_traj, num_step=10, render=False, mask_act=True)
+            diff += np.abs(reply_reward_orin-reply_reward_perturbed)
+        diff_all[k, i] = diff
 print('...........')
+
+"""
 #
 #
 # # Explainer 3 - RNN + Saliency.
@@ -309,3 +312,4 @@ print('...........')
 # np.savez_compressed(save_path + 'dgp/' + name + '_exp.npz', sal=sal_rationale_all, fid=fid_all, stab=stab_all,
 #                     time=mean_time, acc=acc_all, full_covar=covar_all[0], traj_cova=covar_all[1],
 #                     step_covar=covar_all[2], abs_diff=abs_diff_all)
+"""

@@ -226,8 +226,6 @@ class RnnSaliency(object):
         """
         self.model.eval()
         self.likelihood.eval()
-        self.model = self.model.cpu()
-        self.likelihood = self.likelihood.cpu()
 
         mse = 0
         mae = 0
