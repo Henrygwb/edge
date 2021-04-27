@@ -1,3 +1,4 @@
+import gym
 import glob
 import torch
 import numpy as np
@@ -40,11 +41,14 @@ class NNPolicy(torch.nn.Module): # an actor-critic neural network
         return step
 
 
-def rollout(model, env, num_traj, max_ep_len=1e3, save_path=None, render=False):
+def rollout(model, env_name, num_traj, max_ep_len=1e3, save_path=None, render=False):
 
-    max_ep_length = 0
     traj_count = 0
     for i in range(num_traj):
+        env = gym.make(env_name)
+        env.seed(i)
+        env.env.frameskip = 3
+
         print('Traj %d out of %d.' %(i, num_traj))
         cur_obs, cur_states, cur_acts, cur_rewards, cur_values = [], [], [], [], []
         state = torch.tensor(prepro(env.reset()))  # get first state
@@ -76,7 +80,6 @@ def rollout(model, env, num_traj, max_ep_len=1e3, save_path=None, render=False):
                                                                               action.numpy()[0],
                                                                               value.detach().numpy()[0,0]))
         if epr != 0:
-            max_ep_length = max(len(cur_rewards), max_ep_length)
 
             padding_amt = int(max_ep_len - len(cur_obs))
 
@@ -122,27 +125,31 @@ def rollout(model, env, num_traj, max_ep_len=1e3, save_path=None, render=False):
                 print('None support final_rewards')
             print(final_rewards)
             np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz', observations=obs,
-                                actions=acts, values=values, states=states, rewards=rewards, final_rewards=final_rewards)
+                                actions=acts, values=values, states=states, rewards=rewards,
+                                final_rewards=final_rewards, seed=i)
             traj_count += 1
-
-    np.save(save_path + '_max_length.npy', max_ep_length)
+        env.close()
+    np.save(save_path + '_max_length.npy', max_ep_len)
     np.save(save_path + '_num_traj.npy', traj_count)
 
 
-def rl_fed(env, original_traj, importance, num_step, max_ep_len=1e3, render=False, mask_act=False):
+def rl_fed(env_name, k, original_traj, importance, num_step, max_ep_len=1e3, render=False, mask_act=False):
 
     acts_orin = original_traj['actions']
-    obs_orin = original_traj['observations']
     traj_len = np.count_nonzero(acts_orin)
     start_step = max_ep_len - traj_len
+
+    env = gym.make(env_name)
+    env.seed(k)
+    env.env.frameskip = 3
 
     cur_obs, cur_acts, cur_rewards, cur_values = [], [], [], []
     env.reset()  # get first state
     episode_length, epr, done = 0, 0, False  # bookkeeping
 
     for i in range(traj_len):
-        if done:
-            break
+        # if done:
+        #     break
         action = acts_orin[start_step+i]
         if mask_act:
             if start_step+i in importance[:num_step]:
@@ -158,4 +165,4 @@ def rl_fed(env, original_traj, importance, num_step, max_ep_len=1e3, render=Fals
         episode_length += 1
 
     print('step # {}, reward {:.0f}.'.format(episode_length, epr))
-    return cur_rewards[-1]
+    return epr
