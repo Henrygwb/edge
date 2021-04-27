@@ -133,35 +133,42 @@ def rollout(model, env_name, num_traj, max_ep_len=1e3, save_path=None, render=Fa
     np.save(save_path + '_num_traj.npy', traj_count)
 
 
-def rl_fed(env_name, k, original_traj, importance, num_step, max_ep_len=1e3, render=False, mask_act=False):
+def rl_fed(env_name, seed, model, original_traj, importance, max_ep_len=1e3, render=False, mask_act=False):
 
     acts_orin = original_traj['actions']
     traj_len = np.count_nonzero(acts_orin)
     start_step = max_ep_len - traj_len
 
     env = gym.make(env_name)
-    env.seed(k)
+    env.seed(seed)
     env.env.frameskip = 3
 
-    cur_obs, cur_acts, cur_rewards, cur_values = [], [], [], []
-    env.reset()  # get first state
     episode_length, epr, done = 0, 0, False  # bookkeeping
-
+    obs_0 = env.reset()  # get first state
+    state = torch.tensor(prepro(obs_0))
+    hx, cx = Variable(torch.zeros(1, 256)), Variable(torch.zeros(1, 256))
+    act_set = np.array([0, 1, 2, 3, 4, 5])
     for i in range(traj_len):
-        # if done:
-        #     break
-        action = acts_orin[start_step+i]
+        # Steps before the important steps reproduce original traj.
+        action = acts_orin[start_step+i] - 1
+        value, logit, (hx, cx) = model((Variable(state.view(1, 1, 80, 80)), (hx, cx)))
+        hx, cx = Variable(hx.data), Variable(cx.data)
+        prob = F.softmax(logit, dim=-1)
+        action_model = prob.max(1)[1].data.numpy()[0]
         if mask_act:
-            if start_step+i in importance[:num_step]:
-                action = 1
-        obs, reward, done, expert_policy = env.step(action-1)
-        if env.env.game == 'pong':
-            done = reward
+            # Important steps take suboptimal actions.
+            if start_step+i in importance:
+                act_set_1 = act_set[act_set!=action_model]
+                action = np.random.choice(act_set_1)
+            # Steps after the important steps take optimal actions.
+            if start_step+1 > importance[-1]:
+                action = action_model
+        obs, reward, done, expert_policy = env.step(action)
+        state = torch.tensor(prepro(obs))
         if render: env.render()
         epr += reward
 
         # save info!
-        cur_rewards.append(reward)
         episode_length += 1
 
     print('step # {}, reward {:.0f}.'.format(episode_length, epr))

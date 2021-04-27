@@ -80,6 +80,32 @@ def exp_stablity(obs, acts, rewards, explainer, saliency, num_sample=5, eps=0.05
     return stab
 
 
+def truncate_importance(importance, num_importance, percentile=50, thredshold=4):
+    """
+    :param: importance: ordered importance index from high to low.
+    truncate the importance steps into a continuous sequence with a reasonable diff between two consecutive steps.
+    e.g. [183,  38, 193, 190, 110, 182, 187, 188, 184, 178] -> [178, 182, 184, 187, 188, 190, 193]
+         [38, 39, 40, 183,  38, 193, 190, 110, 182, 187, 188, 184, 178] -> [38, 39, 40, 182, 184, 187, 188, 190]
+    """
+    importance_selected = importance[:num_importance]
+    sorted = np.sort(importance_selected)
+    diff = sorted[1:] - sorted[:-1]
+    diff_thred = np.percentile(diff, percentile)
+    max_diff = np.max(diff)
+    if max_diff <= thredshold:
+        sorted_final = sorted
+    else:
+        idx = np.where(diff <= diff_thred)[0]
+        x = set()
+
+        for i in range(len(idx)):
+            x.add(sorted[idx[i]])
+            x.add(sorted[idx[i] + 1])
+        sorted_final = np.sort(list(x))
+
+    return np.arange(sorted_final[0], sorted_final[-1]+1)
+
+
 def draw_fid_fig(metric_values, save_path):
     """
     :params: metric_values: [num_method(5), 4, num_traj]

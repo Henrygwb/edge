@@ -337,17 +337,17 @@ dgp_explainer = DGPXRL(train_len=30123, seq_len=seq_len, len_diff=len_diff, inpu
                        using_OrthogonallyDecouple=False, weight_x=False, lambda_1=0.1)
 
 
-dgp_explainer.load(save_path+'dgp/'+model_2)
+dgp_explainer.load(save_path+model_2)
 dgp_explainer.test(exp_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
 name = model_2[:-11]
 sal_rationale_all, covar_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = dgp_explainer.exp_fid_stab(
     exp_idx, batch_size, traj_path, logit=True, n_stab_samples=n_stab_samples)
 
-np.savez_compressed(save_path + 'dgp/' + name + '_exp.npz', sal=sal_rationale_all, fid=fid_all, stab=stab_all,
+np.savez_compressed(save_path + name + '_exp.npz', sal=sal_rationale_all, fid=fid_all, stab=stab_all,
                     time=mean_time, acc=acc_all, full_covar=covar_all[0], traj_cova=covar_all[1],
                     step_covar=covar_all[2], abs_diff=abs_diff_all)
 
-dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_False_0.1_10_8_True_exp.npz')
+dgp_2_fid_results = np.load(save_path + 'dgp_classification_GRU_100_False_False_False_False_False_False_False_0.1_10_8_True_exp.npz')
 dgp_2_sal = dgp_2_fid_results['sal']
 dgp_2_fid = dgp_2_fid_results['fid']
 dgp_2_stab = dgp_2_fid_results['stab']
