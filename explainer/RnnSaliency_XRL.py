@@ -261,22 +261,19 @@ class RnnSaliency(object):
             else:
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
-            # if torch.cuda.is_available():
-            #     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            if torch.cuda.is_available():
+                obs, acts = obs.cuda(), acts.cuda()
 
             preds = self.model(obs, acts)[:, -1, :]
-            preds = self.likelihood(preds)
+            preds = self.likelihood(preds).cpu().detach()
 
             if self.likelihood_type == 'classification':
                 _, preds = torch.max(preds, 1)
-                preds_all.extend(preds.cpu().detach().numpy().tolist())
-                rewards_all.extend(rewards.cpu().detach().numpy().tolist())
+                preds_all.extend(preds.numpy().tolist())
+                rewards_all.extend(rewards.numpy().tolist())
             else:
                 mae += torch.sum(torch.abs(preds - rewards))
                 mse += torch.sum(torch.square(preds - rewards))
-
-        if torch.cuda.is_available():
-            self.model, self.likelihood = self.model.cuda(), self.likelihood.cuda()
 
         if self.likelihood_type == 'classification':
             preds_all = np.array(preds_all)

@@ -168,8 +168,6 @@ class Rudder(object):
 
         self.model.eval()
         self.fc_out.eval()
-        # self.model = self.model.cpu()
-        # self.fc_out = self.fc_out.cpu()
 
         if torch.cuda.is_available():
             obs, acts = obs.cuda(), acts.cuda()
@@ -188,8 +186,6 @@ class Rudder(object):
         """
         self.model.eval()
         self.fc_out.eval()
-        self.model = self.model.cpu()
-        self.fc_out = self.fc_out.cpu()
 
         mse = 0
         mae = 0
@@ -219,16 +215,13 @@ class Rudder(object):
 
             rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
-            # if torch.cuda.is_available():
-            #     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            if torch.cuda.is_available():
+                obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
 
             preds = self.model(obs, acts)
-            preds = self.fc_out(preds)[..., -1]
+            preds = self.fc_out(preds)[..., -1].detach()
             mae += torch.sum(torch.abs(preds - rewards))
             mse += torch.sum(torch.square(preds - rewards))
-
-        if torch.cuda.is_available():
-            self.model, self.fc_out = self.model.cuda(), self.fc_out.cuda()
 
         print('Test MAE: {}'.format(mae/float(test_idx.shape[0])))
         print('Test MSE: {}'.format(mse/float(test_idx.shape[0])))

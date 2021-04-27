@@ -249,9 +249,6 @@ class RnnAttn(object):
         self.model.eval()
         self.likelihood.eval()
         self.attention.eval()
-        self.model = self.model.cpu()
-        self.likelihood = self.likelihood.cpu()
-        self.attention = self.attention.cpu()
 
         mse = 0
         mae = 0
@@ -286,24 +283,20 @@ class RnnAttn(object):
             else:
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
-            # if torch.cuda.is_available():
-            #     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            if torch.cuda.is_available():
+                obs, acts = obs.cuda(), acts.cuda()
+
             preds = self.model(obs, acts)
             _, preds = self.attention(preds)
-            preds = self.likelihood(preds)
+            preds = self.likelihood(preds).cpu().detach()
 
             if self.likelihood_type == 'classification':
                 _, preds = torch.max(preds, 1)
-                preds_all.extend(preds.cpu().detach().numpy().tolist())
-                rewards_all.extend(rewards.cpu().detach().numpy().tolist())
+                preds_all.extend(preds.numpy().tolist())
+                rewards_all.extend(rewards.numpy().tolist())
             else:
                 mae += torch.sum(torch.abs(preds - rewards))
                 mse += torch.sum(torch.square(preds - rewards))
-
-        if torch.cuda.is_available():
-            self.model = self.model.cuda()
-            self.likelihood = self.likelihood.cuda()
-            self.attention = self.attention.cuda()
 
         if self.likelihood_type == 'classification':
             preds_all = np.array(preds_all)

@@ -275,25 +275,20 @@ class RationaleNet(object):
             else:
                 rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32)
 
-            # if torch.cuda.is_available():
-            #     obs, acts, rewards = obs.cuda(), acts.cuda(), rewards.cuda()
+            if torch.cuda.is_available():
+                obs, acts = obs.cuda(), acts.cuda()
 
             z = self.generator(obs, acts)
             output = self.encoder(obs, acts, z)[:, -1, :]
-            preds = self.likelihood(output)
+            preds = self.likelihood(output).cpu().detach()
 
             if self.likelihood_type == 'classification':
                 _, preds = torch.max(preds, 1)
-                preds_all.extend(preds.cpu().detach().numpy().tolist())
-                rewards_all.extend(rewards.cpu().detach().numpy().tolist())
+                preds_all.extend(preds.numpy().tolist())
+                rewards_all.extend(rewards.numpy().tolist())
             else:
                 mae += torch.sum(torch.abs(preds - rewards))
                 mse += torch.sum(torch.square(preds - rewards))
-
-        if torch.cuda.is_available():
-            self.generator = self.generator.cuda()
-            self.encoder = self.encoder.cuda()
-            self.likelihood = self.likelihood.cuda()
 
         if self.likelihood_type == 'classification':
             preds_all = np.array(preds_all)
