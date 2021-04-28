@@ -46,20 +46,20 @@ rat_fid = rat_fid_results['fid']
 rat_stab = rat_fid_results['stab']
 
 # # Explainer 6 - DGP.
-# dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_exp.npz')
-# dgp_1_sal = dgp_1_fid_results['sal']
-# dgp_1_fid = dgp_1_fid_results['fid']
-# dgp_1_stab = dgp_1_fid_results['stab']
-#
-# dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_False_0.1_10_8_True_exp.npz')
-# dgp_2_sal = dgp_2_fid_results['sal']
-# dgp_2_fid = dgp_2_fid_results['fid']
-# dgp_2_stab = dgp_2_fid_results['stab']
-#
-# dgp_3_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_exp.npz')
-# dgp_3_sal = dgp_3_fid_results['sal']
-# dgp_3_fid = dgp_3_fid_results['fid']
-# dgp_3_stab = dgp_3_fid_results['stab']
+dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_1e-05_10_16_True_exp.npz')
+dgp_1_sal = dgp_1_fid_results['sal']
+dgp_1_fid = dgp_1_fid_results['fid']
+dgp_1_stab = dgp_1_fid_results['stab']
+
+dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_0.01_10_16_True_exp.npz')
+dgp_2_sal = dgp_2_fid_results['sal']
+dgp_2_fid = dgp_2_fid_results['fid']
+dgp_2_stab = dgp_2_fid_results['stab']
+
+dgp_3_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
+dgp_3_sal = dgp_3_fid_results['sal']
+dgp_3_fid = dgp_3_fid_results['fid']
+dgp_3_stab = dgp_3_fid_results['stab']
 
 # Model Fid/Stab figures.
 
@@ -135,6 +135,70 @@ np.savez('fid_baselines.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=
 print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
 print(np.sum(diff_all_50, 1))
+
+
+# DGP fidelity
+diff_all_10 = np.zeros((3, num_trajs))
+diff_all_30 = np.zeros((3, num_trajs))
+diff_all_50 = np.zeros((3, num_trajs))
+
+importance_len_10 = np.zeros((3, num_trajs))
+importance_len_30 = np.zeros((3, num_trajs))
+importance_len_50 = np.zeros((3, num_trajs))
+finals_all = np.zeros(num_trajs)
+exps_all = [dgp_1_sal, dgp_2_sal, dgp_3_sal]
+for k in range(3):
+    print(k)
+    importance = exps_all[k]
+    for i in range(num_trajs):
+        print(i)
+        value = importance[i,0]
+        if np.sum(importance[i,:] == value) == importance.shape[1]:
+            importance_traj = np.arange(max_ep_len)
+            np.random.shuffle(importance_traj)
+        else:
+            importance_traj = np.argsort(importance[i,])[::-1]
+        importance_traj_10 = truncate_importance(importance_traj, 10)
+        importance_traj_30 = truncate_importance(importance_traj, 30)
+        importance_traj_50 = truncate_importance(importance_traj, 50)
+        original_traj = np.load('trajs_exp/youshallnotpasshumans_v0_traj_{}.npz'.format(i))
+        orin_reward = original_traj['final_rewards']
+        print(orin_reward)
+        if k == 0:
+            finals_all[i] = orin_reward
+        seed = int(original_traj['seeds'])
+
+        if orin_reward == 0:
+            orin_reward = -1000
+        else:
+            orin_reward = 1000
+        rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                          original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
+                                          render=False, mask_act=False)
+        replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10,
+                                  render=False, mask_act=True)
+        replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_30,
+                                  render=False, mask_act=True)
+        replay_reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_50,
+                                  render=False, mask_act=True)
+
+        diff_all_10[k, i] = np.abs(orin_reward-replay_reward_10)
+        diff_all_30[k, i] = np.abs(orin_reward-replay_reward_30)
+        diff_all_50[k, i] = np.abs(orin_reward-replay_reward_50)
+        importance_len_10[k, i] = len(importance_traj_10)
+        importance_len_30[k, i] = len(importance_traj_30)
+        importance_len_50[k, i] = len(importance_traj_50)
+
+np.savez('fid_dgp.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_all_50,
+         len_10=importance_len_10, len_30=importance_len_30, len_50=importance_len_50, rewards=finals_all)
+
+print(np.sum(diff_all_10, 1))
+print(np.sum(diff_all_30, 1))
+print(np.sum(diff_all_50, 1))
+
 
 """
 a1 = np.load('exp_results/fid_baseline.npz')['diff_10']

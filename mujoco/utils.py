@@ -238,6 +238,7 @@ def load_from_file(param_pkl_path):
         params = np.load(param_pkl_path)
     return params
 
+
 def load_from_model(param_pkl_path):
 
     if param_pkl_path.endswith('.pkl'):
@@ -260,6 +261,7 @@ def load_from_model(param_pkl_path):
             flat_param = np.concatenate(flat_param, axis=0)
     return flat_param
 
+
 def setFromFlat(var_list, flat_params, sess=None):
     shapes = list(map(lambda x: x.get_shape().as_list(), var_list))
     total_size = np.sum([int(np.prod(shape)) for shape in shapes])
@@ -280,6 +282,7 @@ def setFromFlat(var_list, flat_params, sess=None):
         tf.get_default_session().run(op, {theta: flat_params})
     else:
         sess.run(op, {theta: flat_params})
+
 
 class Policy(object):
     def reset(self, **kwargs):
@@ -387,6 +390,7 @@ class DiagonalGaussian(object):
 
     def entropy(self):
         return tf.reduce_sum(self.logstd + .5 * np.log(2.0 * np.pi * np.e), axis=-1)
+
 
 class MlpPolicyValue(Policy):
     def __init__(self, scope, *, ob_space, ac_space, hiddens, rate=0.0, convs=[], n_batch_train=1,
