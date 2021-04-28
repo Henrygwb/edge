@@ -8,6 +8,7 @@ from PIL import Image
 from abc import ABC, abstractmethod
 from stable_baselines.common.policies import MlpPolicy
 
+
 def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None, exp_agent_id=1,
             max_ep_len=1e3, save_path=None, render=False, save_obs=False):
 
@@ -130,7 +131,7 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
                 final_rewards = 0
                 print('None support final_rewards')
             #print(final_rewards)
-            if save_obs
+            if save_obs:
                 np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz', 
                                     actions=acts, values=values, states=states, rewards=rewards, final_rewards=final_rewards, observations=obs, seed=i)
             else:
@@ -177,7 +178,7 @@ def load_agent(env_name, agent_type, agent_path):
     return policy
 
 
-def rl_fed(env_name, seed, model, obs_rms, agent_type, original_traj, max_ep_len, importance,
+def rl_fed(env, seed, model, obs_rms, agent_type, original_traj, max_ep_len, importance,
            exp_agent_id=1, render=False, mask_act=False):
 
     acts_orin = original_traj['actions']
@@ -186,7 +187,6 @@ def rl_fed(env_name, seed, model, obs_rms, agent_type, original_traj, max_ep_len
     traj_len = np.count_nonzero(values_orin)
 
     start_step = max_ep_len - traj_len
-    env = gym.make(env_name)
     env.seed(seed)
 
     episode_length, epr, done = 0, 0, False  # bookkeeping
@@ -207,8 +207,8 @@ def rl_fed(env_name, seed, model, obs_rms, agent_type, original_traj, max_ep_len
                         if start_step + i in importance:
                             # add noise into the action
                             act = act + np.random.rand(act.shape[0]) * 2 - 1
-                            act = np.clip(act, env.action_space.spaces[exp_agent_id].low,
-                                        env.action_space.spaces[exp_agent_id].high)
+#                            act = np.clip(act, env.action_space.spaces[exp_agent_id].low,
+#                                        env.action_space.spaces[exp_agent_id].high)
             else:
                 obs = np.clip((obs - obs_rms.mean) / np.sqrt(obs_rms.var + 1e-8), -10, 10)
                 act = model[id].step(obs=obs[None, :], deterministic=True)[0][0]

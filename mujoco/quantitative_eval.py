@@ -72,6 +72,7 @@ model = load_agent(env_name, agent_type=['zoo','zoo'], agent_path=agent_path)
 norm_path = agent_path + '/obs_rms.pkl'
 obs_rms = load_from_file(norm_path)
 num_trajs = 30
+env = gym.make(env_name)
 
 # Baseline fidelity
 diff_all_10 = np.zeros((5, num_trajs))
@@ -81,7 +82,7 @@ diff_all_50 = np.zeros((5, num_trajs))
 importance_len_10 = np.zeros((5, num_trajs))
 importance_len_30 = np.zeros((5, num_trajs))
 importance_len_50 = np.zeros((5, num_trajs))
-
+finals_all = np.zeros(num_trajs)
 exps_all = [sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
 for k in range(5):
     print(k)
@@ -100,22 +101,24 @@ for k in range(5):
         original_traj = np.load('trajs_exp/youshallnotpasshumans_v0_traj_{}.npz'.format(i))
         orin_reward = original_traj['final_rewards']
         print(orin_reward)
+        if k == 0:
+            finals_all[i] = orin_reward
         seed = int(original_traj['seeds'])
 
         if orin_reward == 0:
             orin_reward = -1000
         else:
             orin_reward = 1000
-        # rl_fed(env_name=env_name, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-        #                                   original_traj=original_traj, max_ep_len=max_ep_len, importance,
-        #                                   render=False, mask_act=False)
-        replay_reward_10 = rl_fed(env_name=env_name, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+        rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                          original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
+                                          render=False, mask_act=False)
+        replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10, 
                                   render=False, mask_act=True)
-        replay_reward_30 = rl_fed(env_name=env_name, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+        replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_30, 
                                   render=False, mask_act=True)
-        replay_reward_50 = rl_fed(env_name=env_name, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+        replay_reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_50, 
                                   render=False, mask_act=True)
 
@@ -127,7 +130,7 @@ for k in range(5):
         importance_len_50[k, i] = len(importance_traj_50)
 
 np.savez('fid_baselines.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_all_50,
-         len_10=importance_len_10, len_30=importance_len_30, len_50=importance_len_50)
+         len_10=importance_len_10, len_30=importance_len_30, len_50=importance_len_50, rewards=finals_all)
 
 print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
