@@ -12,7 +12,7 @@ from explainer.RnnSaliency_XRL import RnnSaliency
 from explainer.RationaleNet_XRL import RationaleNet
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--explainer", type=str, default='rudder')
+parser.add_argument("--explainer", type=str, default='dgp')
 
 args = parser.parse_args()
 
@@ -312,9 +312,9 @@ elif args.explainer == 'dgp':
     using_sor = False # Whether to use SoR approximation, not applicable for KSI and CIQ.
     using_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
-    weight_x = True
+    weight_x = False
     logit = True
-    lambda_1 = 1e-5
+    lambda_1 = 1e-2
     local_samples = 10
     likelihood_sample_size = 16
 
