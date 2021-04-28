@@ -56,12 +56,12 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
             actions = []
             values = []
 
-            for i, obs in enumerate(observation):
-                if agent_type[i] == 'zoo':
-                   act, value = policy[i].act(stochastic=False, observation=obs)
+            for id, obs in enumerate(observation):
+                if agent_type[id] == 'zoo':
+                   act, value = policy[id].act(stochastic=False, observation=obs)
                 else:
                    obs = np.clip((obs - obs_rms.mean) / np.sqrt(obs_rms.var + 1e-8), -10, 10)
-                   act = policy[i].step(obs=obs[None, :], deterministic=True)[0][0]
+                   act = policy[id].step(obs=obs[None, :], deterministic=True)[0][0]
                    value = None
                 actions.append(act)
                 values.append(value)
@@ -134,6 +134,83 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
 
     np.save(save_path + '_max_length_.npy', max_ep_length)
     np.save(save_path + '_num_traj_.npy', traj_count)
+
+
+def rl_fed(env, seed, agent_type=['zoo','zoo'], agent_path, norm_path, original_traj, 
+           max_ep_len, importance, render=False, mask_act=False):
+    # load model
+    tf_config = tf.ConfigProto(
+        inter_op_parallelism_threads=1,
+        intra_op_parallelism_threads=1)
+    sess = tf.Session(config=tf_config)
+    sess.__enter__()
+
+    policy = []
+    for i in range(2):
+        if agent_type[i] == 'zoo':
+           policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
+                                        ob_space=env.observation_space.spaces[i],
+                                        ac_space=env.action_space.spaces[i],
+                                        hiddens=[64, 64], normalize=True))
+        elif agent_type[i] == 'adv':
+           policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i],
+                          1, 1, 1, reuse=False))
+
+    sess.run(tf.variables_initializer(tf.global_variables()))
+    obs_rms = load_from_file(norm_path)
+    
+    for i in range(2):
+        if agent_type[i] == 'zoo':
+           param_path = agent_path + '/agent' + str(i + 1) + '_parameters-v1.pkl'
+           param = load_from_file(param_pkl_path=param_path)
+           setFromFlat(policy[i].get_variables(), param)
+        else:
+           param = load_from_model(agent_path + '/model.pkl')
+           adv_agent_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='model')
+           setFromFlat(adv_agent_variables, param)
+
+    acts_orin = original_traj['actions']
+    values_orin = original_traj['values']
+
+    traj_len = np.count_nonzero(values_orin)
+
+    start_step = max_ep_len - traj_len
+
+    env = gym.make(env_name)
+    env.seed(seed)
+
+    episode_length, epr, done = 0, 0, False  # bookkeeping
+    observation = env.reset()
+
+    for i in range(traj_len):
+        for id, obs in enumerate(observation):
+            if agent_type[id] == 'zoo':
+                action = acts_orin[start_step+i]
+                act, _ = policy[id].act(stochastic=False, observation=obs)
+                if id == exp_agent_id and mask_act:
+                    if start_step + i in importance:
+                        # add noise into the action
+                        act = action + np.random.rand(act.shape) * 2 - 1
+                        act = np.clip(act, env.action_space.low, env.action_space.high)
+            else:
+                obs = np.clip((obs - obs_rms.mean) / np.sqrt(obs_rms.var + 1e-8), -10, 10)
+                act = policy[id].step(obs=obs[None, :], deterministic=True)[0][0]
+            
+            actions.append(act)
+
+        actions = tuple(actions)
+        observation, _, done, infos = env.step(actions)
+        reward = infos[exp_agent_id]['reward_remaining']
+        episode_length += 1
+
+        if render: env.render()
+        if done: 
+            assert reward != 0
+            epr = reward
+            break
+    print('step # {}, reward {:.0f}.'.format(episode_length, epr))
+    return epr
+
 
 def load_from_file(param_pkl_path):
 
