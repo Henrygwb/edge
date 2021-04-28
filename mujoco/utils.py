@@ -137,7 +137,7 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
 
 
 def rl_fed(env, seed, agent_type=['zoo','zoo'], agent_path, norm_path, original_traj, 
-           importance, max_ep_len=1e3, render=False, mask_act=False):
+           max_ep_len, importance, render=False, mask_act=False):
     # load model
     tf_config = tf.ConfigProto(
         inter_op_parallelism_threads=1,
@@ -182,9 +182,6 @@ def rl_fed(env, seed, agent_type=['zoo','zoo'], agent_path, norm_path, original_
     episode_length, epr, done = 0, 0, False  # bookkeeping
     observation = env.reset()
 
-    episode_length = 0
-
-
     for i in range(traj_len):
         for id, obs in enumerate(observation):
             if agent_type[id] == 'zoo':
@@ -205,6 +202,8 @@ def rl_fed(env, seed, agent_type=['zoo','zoo'], agent_path, norm_path, original_
         observation, _, done, infos = env.step(actions)
         reward = infos[exp_agent_id]['reward_remaining']
         episode_length += 1
+
+        if render: env.render()
         if done: 
             assert reward != 0
             epr = reward

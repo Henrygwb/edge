@@ -68,7 +68,8 @@ dgp_3_stab = dgp_3_fid_results['stab']
 # Fid RL.
 env_name = 'multicomp/YouShallNotPassHumans-v0'
 max_ep_len = 200
-agent_path = 'agents/{}/'.format(env_name.lower())
+agent_path = './agent-zoo/you-shall-not-pass'
+norm_path = agent_path + '/obs_rms.pkl'
 num_trajs = 30
 
 env = gym.make(env_name)
@@ -105,17 +106,16 @@ for k in range(5):
             orin_reward = -1000
         else:
             orin_reward = 1000
-        # replay_reward_orin = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-        #                             max_ep_len=max_ep_len, importance=None, render=False, mask_act=False)
 
-        replay_reward_10 = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-                                  max_ep_len=max_ep_len, importance=importance_traj_10, render=False, mask_act=True)
-
-        replay_reward_30 = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-                                  max_ep_len=max_ep_len, importance=importance_traj_30, render=False, mask_act=True)
-
-        replay_reward_50 = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-                                  max_ep_len=max_ep_len, importance=importance_traj_50, render=False, mask_act=True)
+        replay_reward_10 = rl_fed(env=env, seed=seed, agent_type=['zoo','zoo'], agent_path=agent_path, norm_path=norm_path, 
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10, 
+                                  render=False, mask_act=True)
+        replay_reward_30 = rl_fed(env=env, seed=seed, agent_type=['zoo','zoo'], agent_path=agent_path, norm_path=norm_path, 
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_30, 
+                                  render=False, mask_act=True)
+        replay_reward_50 = rl_fed(env=env, seed=seed, agent_type=['zoo','zoo'], agent_path=agent_path, norm_path=norm_path, 
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_50, 
+                                  render=False, mask_act=True)
 
         diff_all_10[k, i] = np.abs(orin_reward-replay_reward_10)
         diff_all_30[k, i] = np.abs(orin_reward-replay_reward_30)
