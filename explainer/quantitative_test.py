@@ -3,6 +3,7 @@ import timeit
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from pathlib import Path
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -106,85 +107,32 @@ def truncate_importance(importance, num_importance, percentile=50, thredshold=4)
     return np.arange(sorted_final[0], sorted_final[-1]+1)
 
 
-def draw_fid_fig(metric_values, save_path):
+def draw_fid_fig(fid_data, explainers, metrics, save_path, box_plot=True, log_scale=True):
     """
-    :params: metric_values: [num_method(5), 4, num_traj]
+    :params: fid_data: [num_method, num_metrics, num_traj]
     """
     label_list = []
     value_list = []
     explainer_list = []
-
-    for metric_type in ['ZeroOne', 'Top5', 'Top15', 'Top25']:
-
-        for i in range(metric_values.shape[2]):
-            label_list.append(metric_type)
-            if metric_type == 'ZeroOne':
-                value_list.append(metric_values[0, 0, i])
-            if metric_type == 'Top10':
-                value_list.append(metric_values[0, 1, i])
-            if metric_type == 'Top25':
-                value_list.append(metric_values[0, 2, i])
-            if metric_type == 'Top50':
-                value_list.append(metric_values[0, 3, i])
-
-            explainer_list.append('Rudder')
-
-        for i in range(metric_values.shape[2]):
-            label_list.append(metric_type)
-            if metric_type == 'ZeroOne':
-                value_list.append(metric_values[1, 0, i])
-            if metric_type == 'Top10':
-                value_list.append(metric_values[1, 1, i])
-            if metric_type == 'Top25':
-                value_list.append(metric_values[1, 2, i])
-            if metric_type == 'Top50':
-                value_list.append(metric_values[1, 3, i])
-
-            explainer_list.append('Saliency')
-
-        for i in range(metric_values.shape[2]):
-            label_list.append(metric_type)
-            if metric_type == 'ZeroOne':
-                value_list.append(metric_values[2, 0, i])
-            if metric_type == 'Top10':
-                value_list.append(metric_values[2, 1, i])
-            if metric_type == 'Top25':
-                value_list.append(metric_values[2, 2, i])
-            if metric_type == 'Top50':
-                value_list.append(metric_values[2, 3, i])
-
-            explainer_list.append('Attn')
-
-        for i in range(metric_values.shape[2]):
-            label_list.append(metric_type)
-            if metric_type == 'ZeroOne':
-                value_list.append(metric_values[3, 0, i])
-            if metric_type == 'Top10':
-                value_list.append(metric_values[3, 1, i])
-            if metric_type == 'Top25':
-                value_list.append(metric_values[3, 2, i])
-            if metric_type == 'Top50':
-                value_list.append(metric_values[3, 3, i])
-
-            explainer_list.append('RatNet')
-
-        for i in range(metric_values.shape[2]):
-            label_list.append(metric_type)
-            if metric_type == 'ZeroOne':
-                value_list.append(metric_values[4, 0, i])
-            if metric_type == 'Top10':
-                value_list.append(metric_values[4, 1, i])
-            if metric_type == 'Top25':
-                value_list.append(metric_values[4, 2, i])
-            if metric_type == 'Top50':
-                value_list.append(metric_values[4, 3, i])
-
-            explainer_list.append('Our')
+    for explainer_idx, explainer_type in enumerate(explainers):
+        for idx, metric_type in enumerate(metrics):
+            for metric in fid_data[explainer_idx][idx]:
+                label_list.append(metric_type)
+                explainer_list.append(explainer_type)
+                value_list.append(metric)
 
     data_pd = pd.DataFrame({'Metric': value_list, 'Label': label_list, 'explainer': explainer_list})
     figure = plt.figure(figsize=(20, 6))
-    ax = sns.boxplot(x="Label", y="Metric", hue="explainer", data=data_pd, whis=2,
-                     hue_order=['Rudder', 'Saliency', 'Attn', 'RatNet', 'Our'])
+
+    if box_plot:
+        ax = sns.boxplot(x="Label", y="Metric", hue="explainer", data=data_pd,
+                         hue_order=explainers)
+    else:
+        ax = sns.barplot(x="Label", y="Metric", hue="explainer", data=data_pd,
+                         hue_order=explainers)
+        if log_scale:
+            ax.set_yscale("log")
+            ax.set_yticks([0.01, 10])
 
     ax.legend(loc='upper left', bbox_to_anchor=(1, 0.5), prop={'size': 30})
     ax.set_ylabel('Metric', fontsize=35)
@@ -193,44 +141,76 @@ def draw_fid_fig(metric_values, save_path):
     pp = PdfPages(save_path)
     pp.savefig(figure, bbox_inches='tight')
     pp.close()
-    return 0
 
 
-def draw_stab_fig(metric_values, save_path):
+def draw_stab_fig(stab_data, explainers, save_path, box_plot=True):
     """
     :params: metric_values: [num_method(5), num_traj]
     """
     value_list = []
     explainer_list = []
-
-    for i in range(metric_values.shape[1]):
-        value_list.append(metric_values[0, i])
-        explainer_list.append('Rudder')
-
-    for i in range(metric_values.shape[2]):
-        value_list.append(metric_values[1, i])
-        explainer_list.append('Saliency')
-
-    for i in range(metric_values.shape[2]):
-        value_list.append(metric_values[2, i])
-        explainer_list.append('Attn')
-
-    for i in range(metric_values.shape[2]):
-        value_list.append(metric_values[3, i])
-        explainer_list.append('RatNet')
-
-    for i in range(metric_values.shape[2]):
-        value_list.append(metric_values[4, i])
-        explainer_list.append('Our')
+    for explainer_idx, explainer_type in enumerate(explainers):
+        for metric_val in stab_data[explainer_idx]:
+            value_list.append(metric_val)
+            explainer_list.append(explainer_type)
 
     data_pd = pd.DataFrame({'Metric': value_list, 'explainer': explainer_list})
     figure = plt.figure(figsize=(20, 6))
-    ax = sns.boxplot(x="explainer", y="Metric", data=data_pd, whis=2)
-
+    if box_plot:
+        ax = sns.boxplot(x="explainer", y="Metric", data=data_pd)
+    else:
+        ax = sns.barplot(x="explainer", y="Metric", data=data_pd)
+        ax.set_yticks([0.05, 0.1])
     ax.set_ylabel('Metric', fontsize=35)
     ax.set_xlabel('explainer')
     ax.tick_params(axis='both', which='major', labelsize=35)
     pp = PdfPages(save_path)
     pp.savefig(figure, bbox_inches='tight')
     pp.close()
-    return 0
+
+
+def draw_fid_fig_t(fid_data, explainers, metrics, save_path, box_plot=True, log_scale=True):
+    """
+    :params: fid_data: [num_metrics, num_method, num_traj]
+    """
+    label_list = []
+    value_list = []
+    explainer_list = []
+    for idx, metric_type in enumerate(metrics):
+        for explainer_idx, explainer_type in enumerate(explainers):
+            for metric in fid_data[idx][explainer_idx]:
+                label_list.append(metric_type)
+                explainer_list.append(explainer_type)
+                value_list.append(metric)
+
+    data_pd = pd.DataFrame({'Metric': value_list, 'Label': label_list, 'explainer': explainer_list})
+    figure = plt.figure(figsize=(20, 6))
+
+    if box_plot:
+        ax = sns.boxplot(x="Label", y="Metric", hue="explainer", data=data_pd,
+                         hue_order=explainers)
+    else:
+        ax = sns.barplot(x="Label", y="Metric", hue="explainer", data=data_pd,
+                         hue_order=explainers)
+        if log_scale:
+            ax.set_yscale("log")
+            ax.set_yticks([0.01, 10])
+
+    ax.legend(loc='upper left', bbox_to_anchor=(1, 0.5), prop={'size': 30})
+    ax.set_ylabel('Metric', fontsize=35)
+    ax.set_xlabel('')
+    ax.tick_params(axis='both', which='major', labelsize=35)
+    pp = PdfPages(save_path)
+    pp.savefig(figure, bbox_inches='tight')
+    pp.close()
+
+
+def compute_rl_fid(diff, len, diff_max, len_max=200, eps=0.001):
+    diff = diff / diff_max
+    len = len / len_max
+    diff[diff == 0] =eps
+    len[len == 0] =eps
+    diff_log = np.log(diff)
+    len_log = np.log(len)
+    return len_log - diff_log
+
