@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from stable_baselines.common.policies import MlpPolicy
 
 def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None, exp_agent_id=1,
-            max_ep_len=1e3, save_path=None, render=False):
+            max_ep_len=1e3, save_path=None, render=False, save_obs=False):
 
     # load agent-0 / agent-1 
     tf_config = tf.ConfigProto(
@@ -45,6 +45,7 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
     max_ep_length = 0
     traj_count = 0
     for i in range(num_traj):
+        env.seed(i)
         print('Traj %d out of %d.' %(i, num_traj))
         cur_obs, cur_states, cur_acts, cur_rewards, cur_values = [], [], [], [], []
         observation = env.reset()
@@ -73,9 +74,10 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
                assert reward != 0
                epr = reward
             env.render()
-            #state = env.render(mode='rgb_array')
+            if save_obs:
+               state = env.render(mode='rgb_array')
             # save info
-            #cur_obs.append(state)
+            cur_obs.append(state)
             cur_states.append(observation[exp_agent_id])
             cur_acts.append(actions[exp_agent_id])
             cur_rewards.append(reward)
@@ -86,10 +88,10 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
         if epr != 0:
             max_ep_length = max(len(cur_rewards), max_ep_length)
             padding_amt = int(max_ep_len - len(cur_acts))
-            # elem_obs = cur_obs[-1]
-            # padding_elem_obs = np.zeros_like(elem_obs)
-            # for _ in range(padding_amt):
-            #     cur_obs.insert(0, padding_elem_obs)
+            elem_obs = cur_obs[-1]
+            padding_elem_obs = np.zeros_like(elem_obs)
+            for _ in range(padding_amt):
+                cur_obs.insert(0, padding_elem_obs)
             elem_states = cur_states[-1]
             padding_elem_states = np.zeros_like(elem_states)
             for _ in range(padding_amt):
@@ -112,7 +114,7 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
             for _ in range(padding_amt):
                 cur_values.insert(0, padding_elem_values)
 
-            #obs = np.array(cur_obs)
+            obs = np.array(cur_obs)
             states = np.array(cur_states)
             acts = np.array(cur_acts)
             rewards = np.array(cur_rewards)
@@ -128,8 +130,13 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
                 final_rewards = 0
                 print('None support final_rewards')
             #print(final_rewards)
-            np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz', 
-                                actions=acts, values=values, states=states, rewards=rewards, final_rewards=final_rewards)
+            if save_obs
+                np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz', 
+                                    actions=acts, values=values, states=states, rewards=rewards, final_rewards=final_rewards, observations=obs, seed=i)
+            else:
+                np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz', 
+                                    actions=acts, values=values, states=states, rewards=rewards, final_rewards=final_rewards, seed=i)
+
             traj_count += 1
 
     np.save(save_path + '_max_length_.npy', max_ep_length)
