@@ -329,7 +329,8 @@ elif args.explainer == 'dgp':
     name = 'dgp_' + likelihood_type + '_' + rnn_cell_type + '_' + \
            str(num_inducing_points)+'_'+ str(using_ngd) + '_' + str(using_ngd) + '_' \
            + str(using_ksi) + '_' + str(using_ciq) + '_' + str(using_sor) + '_' \
-           + str(using_OrthogonallyDecouple) + str(weight_x) + str(logit)
+           + str(using_OrthogonallyDecouple) + '_' + str(weight_x) + '_' + str(lambda_1) + '_' \
+           + str(local_samples) + '_' + str(likelihood_sample_size) + '_' + str(logit)
 
     dgp_explainer.train(train_idx, test_idx, batch_size, traj_path,
                         local_samples=local_samples, likelihood_sample_size=likelihood_sample_size,
