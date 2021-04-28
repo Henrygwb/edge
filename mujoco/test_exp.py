@@ -3,20 +3,16 @@ sys.path.append('..')
 os.environ["CUDA_VISIBLE_DEVICES"] = " "
 import numpy as np
 import argparse
-
 from explainer.DGP_XRL import DGPXRL
 from explainer.Rudder_XRL import Rudder
 from explainer.RnnAttn_XRL import RnnAttn
 from explainer.RnnSaliency_XRL import RnnSaliency
 from explainer.RationaleNet_XRL import RationaleNet
 
-
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--explainer", type=str, default='dgp')
 
 args = parser.parse_args()
-
 
 # Setup env, load the target agent, and collect the trajectories.
 env_name = 'youshallnotpasshumans_v0'
@@ -399,7 +395,7 @@ elif args.explainer == 'dgp':
       print('Mean exp time: {}'.format(dgp_2_time))
 
       """
-      model_3 = 'dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_model.data'
+      model_3 = 'dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_model.data'
       dgp_explainer = DGPXRL(train_len=30123, seq_len=seq_len, len_diff=len_diff, input_dim=input_dim,
                              hiddens=hiddens, likelihood_type=likelihood_type, lr=0.01, optimizer_type='adam',
                              n_epoch=2, gamma=0.1, num_inducing_points=100, n_action=n_action,
@@ -419,7 +415,7 @@ elif args.explainer == 'dgp':
                           time=mean_time, acc=acc_all, full_covar=covar_all[0], traj_cova=covar_all[1],
                           step_covar=covar_all[2], abs_diff=abs_diff_all)
 
-      dgp_3_fid_results = np.load(save_path + 'dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_exp.npz')
+      dgp_3_fid_results = np.load(save_path + 'dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
       dgp_3_sal = dgp_3_fid_results['sal']
       dgp_3_fid = dgp_3_fid_results['fid']
       dgp_3_stab = dgp_3_fid_results['stab']
