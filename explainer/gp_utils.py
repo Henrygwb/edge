@@ -309,7 +309,7 @@ class DGPXRLModel(gpytorch.Module):
             # inducing_points = torch.rand(num_inducing_points, 2 * hiddens[-1]) # MuJoCo game.
         if mean_inducing_points is None:
             mean_inducing_points = torch.randn(num_inducing_points*5, 2*hiddens[-1])
-            # inducing_points = torch.rand(num_inducing_points*5, 2 * hiddens[-1]) # MuJoCo game.
+            # mean_inducing_points = torch.rand(num_inducing_points*5, 2 * hiddens[-1]) # MuJoCo game.
 
         self.gp_layer = GaussianProcessLayer(input_dim_step=hiddens[-1], input_dim_traj=hiddens[-1],
                                              num_inducing_points=num_inducing_points, inducing_points=inducing_points,
