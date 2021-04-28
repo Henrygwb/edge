@@ -199,7 +199,7 @@ def rl_fed(env_name, seed, model, obs_rms, agent_type, original_traj, max_ep_len
                     if mask_act:
                         if start_step + i in importance:
                             # add noise into the action
-                            act = action + np.random.rand(act.shape[0]) * 2 - 1
+                            act = act + np.random.rand(act.shape[0]) * 2 - 1
                             act = np.clip(act, env.action_space.spaces[exp_agent_id].low,
                                         env.action_space.spaces[exp_agent_id].high)
             else:
