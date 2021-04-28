@@ -88,7 +88,8 @@ for k in range(5):
     importance = exps_all[k]
     for i in range(num_trajs):
         print(i)
-        if k == 2:
+        value = importance[i,0]
+        if np.sum(importance[i,:] == value) == importance.shape[1]:
             importance_traj = np.arange(max_ep_len)
             np.random.shuffle(importance_traj)
         else:
