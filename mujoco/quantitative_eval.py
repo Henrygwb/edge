@@ -3,9 +3,8 @@ sys.path.append('..')
 os.environ["CUDA_VISIBLE_DEVICES"] = " "
 import gym, torch
 import numpy as np
-from utils import rl_fed
+from utils import rl_fed, load_agent, load_from_file
 from explainer.quantitative_test import truncate_importance
-
 import gym_compete
 
 
@@ -46,21 +45,21 @@ rat_sal = rat_fid_results['sal']
 rat_fid = rat_fid_results['fid']
 rat_stab = rat_fid_results['stab']
 
-# Explainer 6 - DGP.
-dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_exp.npz')
-dgp_1_sal = dgp_1_fid_results['sal']
-dgp_1_fid = dgp_1_fid_results['fid']
-dgp_1_stab = dgp_1_fid_results['stab']
-
-dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_False_0.1_10_8_True_exp.npz')
-dgp_2_sal = dgp_2_fid_results['sal']
-dgp_2_fid = dgp_2_fid_results['fid']
-dgp_2_stab = dgp_2_fid_results['stab']
-
-dgp_3_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_exp.npz')
-dgp_3_sal = dgp_3_fid_results['sal']
-dgp_3_fid = dgp_3_fid_results['fid']
-dgp_3_stab = dgp_3_fid_results['stab']
+# # Explainer 6 - DGP.
+# dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_exp.npz')
+# dgp_1_sal = dgp_1_fid_results['sal']
+# dgp_1_fid = dgp_1_fid_results['fid']
+# dgp_1_stab = dgp_1_fid_results['stab']
+#
+# dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_False_0.1_10_8_True_exp.npz')
+# dgp_2_sal = dgp_2_fid_results['sal']
+# dgp_2_fid = dgp_2_fid_results['fid']
+# dgp_2_stab = dgp_2_fid_results['stab']
+#
+# dgp_3_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_exp.npz')
+# dgp_3_sal = dgp_3_fid_results['sal']
+# dgp_3_fid = dgp_3_fid_results['fid']
+# dgp_3_stab = dgp_3_fid_results['stab']
 
 # Model Fid/Stab figures.
 
@@ -69,10 +68,10 @@ dgp_3_stab = dgp_3_fid_results['stab']
 env_name = 'multicomp/YouShallNotPassHumans-v0'
 max_ep_len = 200
 agent_path = './agent-zoo/you-shall-not-pass'
+model = load_agent(env_name, agent_type=['zoo','zoo'], agent_path=agent_path)
 norm_path = agent_path + '/obs_rms.pkl'
+obs_rms = load_from_file(norm_path)
 num_trajs = 30
-
-env = gym.make(env_name)
 
 # Baseline fidelity
 diff_all_10 = np.zeros((5, num_trajs))
@@ -106,14 +105,16 @@ for k in range(5):
             orin_reward = -1000
         else:
             orin_reward = 1000
-
-        replay_reward_10 = rl_fed(env=env, seed=seed, agent_type=['zoo','zoo'], agent_path=agent_path, norm_path=norm_path, 
+        # rl_fed(env_name=env_name, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+        #                                   original_traj=original_traj, max_ep_len=max_ep_len, importance,
+        #                                   render=False, mask_act=False)
+        replay_reward_10 = rl_fed(env_name=env_name, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10, 
                                   render=False, mask_act=True)
-        replay_reward_30 = rl_fed(env=env, seed=seed, agent_type=['zoo','zoo'], agent_path=agent_path, norm_path=norm_path, 
+        replay_reward_30 = rl_fed(env_name=env_name, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_30, 
                                   render=False, mask_act=True)
-        replay_reward_50 = rl_fed(env=env, seed=seed, agent_type=['zoo','zoo'], agent_path=agent_path, norm_path=norm_path, 
+        replay_reward_50 = rl_fed(env_name=env_name, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_50, 
                                   render=False, mask_act=True)
 
@@ -130,58 +131,6 @@ np.savez('fid_baselines.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=
 print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
 print(np.sum(diff_all_50, 1))
-
-# DGP fidelity
-# diff_all_10 = np.zeros((3, num_trajs))
-# diff_all_30 = np.zeros((3, num_trajs))
-# diff_all_50 = np.zeros((3, num_trajs))
-
-# importance_len_10 = np.zeros((3, num_trajs))
-# importance_len_30 = np.zeros((3, num_trajs))
-# importance_len_50 = np.zeros((3, num_trajs))
-
-# exps_all = [dgp_1_sal, dgp_2_sal, dgp_3_sal]
-# for k in range(3):
-#     print(k)
-#     importance = exps_all[k]
-#     for i in range(num_trajs):
-#         print(i)
-#         importance_traj = np.argsort(importance[i,])[::-1]
-#         importance_traj_10 = truncate_importance(importance_traj, 10)
-#         importance_traj_30 = truncate_importance(importance_traj, 30)
-#         importance_traj_50 = truncate_importance(importance_traj, 50)
-#         original_traj = np.load('trajs_exp/Pong-v0_traj_{}.npz'.format(i))
-#         orin_reward = original_traj['final_rewards']
-#         print(orin_reward)
-#         seed = int(original_traj['seed'])
-#         if orin_reward == 0:
-#             orin_reward = -1
-#         # replay_reward_orin = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-#         #                             max_ep_len=max_ep_len, importance=None, render=False, mask_act=False)
-
-#         replay_reward_10 = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-#                                   max_ep_len=max_ep_len, importance=importance_traj_10, render=False, mask_act=True)
-
-#         replay_reward_30 = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-#                                   max_ep_len=max_ep_len, importance=importance_traj_30, render=False, mask_act=True)
-
-#         replay_reward_50 = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-#                                   max_ep_len=max_ep_len, importance=importance_traj_50, render=False, mask_act=True)
-
-#         diff_all_10[k, i] = np.abs(orin_reward-replay_reward_10)
-#         diff_all_30[k, i] = np.abs(orin_reward-replay_reward_30)
-#         diff_all_50[k, i] = np.abs(orin_reward-replay_reward_50)
-#         importance_len_10[k, i] = len(importance_traj_10)
-#         importance_len_30[k, i] = len(importance_traj_30)
-#         importance_len_50[k, i] = len(importance_traj_50)
-
-# np.savez('fid_dgp.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_all_50,
-#          len_10=importance_len_10, len_30=importance_len_30, len_50=importance_len_50)
-
-# print(np.sum(diff_all_10, 1))
-# print(np.sum(diff_all_30, 1))
-# print(np.sum(diff_all_50, 1))
-
 
 """
 a1 = np.load('exp_results/fid_baseline.npz')['diff_10']
