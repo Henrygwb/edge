@@ -305,8 +305,7 @@ class DGPXRL(object):
                             lasso_term = torch.norm(self.likelihood.mixing_weights, p=1) # lasso
                             lasso_term.backward()
                             loss_reg_sum +=lasso_term
-
-                        # self.likelihood_regular_optimizer.step()
+                            self.likelihood_regular_optimizer.step()
 
                         if self.weight_x:
                             output = self.likelihood(output, input_encoding=features)
@@ -342,7 +341,8 @@ class DGPXRL(object):
                 self.scheduler_hyperparameter.step()
 
             self.scheduler.step()
-            # self.scheduler_regular.step()
+            if not self.weight_x:
+                self.scheduler_regular.step()
             # self.test(test_idx, batch_size, traj_path)
             # self.model.train()
             # self.likelihood.train()

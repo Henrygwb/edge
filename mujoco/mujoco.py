@@ -37,12 +37,12 @@ train_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0]*0.7):, ]
 exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.1), ]
 
-hiddens = [64, 32, 8]
+hiddens = [64, 64]
 encoder_type = 'MLP'
 rnn_cell_type = 'GRU'
 n_epoch = 200
 batch_size = 40
-save_path = 'exp_model_results/'
+save_path = 'models/dgp/'
 likelihood_type = 'classification'
 n_stab_samples = 10
 
@@ -304,6 +304,7 @@ elif args.explainer == 'rationale':
 
 elif args.explainer == 'dgp':
     # Explainer 6 - DGP.
+    hiddens = [64, 32, 8]
     optimizer = 'adam'
     num_inducing_points = 600
     using_ngd = False # Whether to use natural gradient descent.
@@ -312,9 +313,9 @@ elif args.explainer == 'dgp':
     using_sor = False # Whether to use SoR approximation, not applicable for KSI and CIQ.
     using_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
-    weight_x = False
+    weight_x = True
     logit = True
-    lambda_1 = 1e-2
+    lambda_1 = 1e-5
     local_samples = 10
     likelihood_sample_size = 16
 
