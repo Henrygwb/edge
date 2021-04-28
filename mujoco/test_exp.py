@@ -394,11 +394,11 @@ elif args.explainer == 'dgp':
       print('=============================================')
       print('Mean exp time: {}'.format(dgp_2_time))
 
-      """
+
       model_3 = 'dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_model.data'
       dgp_explainer = DGPXRL(train_len=30123, seq_len=seq_len, len_diff=len_diff, input_dim=input_dim,
                              hiddens=hiddens, likelihood_type=likelihood_type, lr=0.01, optimizer_type='adam',
-                             n_epoch=2, gamma=0.1, num_inducing_points=100, n_action=n_action,
+                             n_epoch=2, gamma=0.1, num_inducing_points=600, n_action=n_action,
                              grid_bounds=grid_bound, encoder_type=encoder_type, inducing_points=None,
                              mean_inducing_points=None, num_class=num_class, rnn_cell_type=rnn_cell_type,
                              using_ngd=False, using_ksi=False, using_ciq=False, using_sor=False,
@@ -457,4 +457,4 @@ elif args.explainer == 'dgp':
 
       print('=============================================')
       print('Mean exp time: {}'.format(dgp_3_time))
-      """
+      
