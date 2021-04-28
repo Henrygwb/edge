@@ -17,10 +17,12 @@ norm_path = agent_path + '/obs_rms.pkl'
 num_traj = 30000
 max_ep_len = 200
 resolution = (533, 300)
+render = False
 
 # Load agent, build environment, and play an episode.
 env = gym.make(env_name)
-#env = Render_mujoco(env, env_name, None, resolution, 'default')
+if render:
+   env = Render_mujoco(env, env_name, None, resolution, 'default')
 env.seed(1)
 rollout(agent_path, env, num_traj=num_traj, norm_path=norm_path, agent_type=['adv','zoo'],
-        max_ep_len=200, save_path=traj_path, render=False)
+        max_ep_len=200, save_path=traj_path, render=render)
