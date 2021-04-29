@@ -25,10 +25,10 @@ max_ep_len = 200
 
 # Get the shared parameters, prepare training/testing data.
 num_class = 1
-seq_len = int(np.load(traj_path + '_max_length_.npy'))
+seq_len = 200
 n_action = 3
 len_diff = max_ep_len - seq_len
-total_data_idx = np.arange(int(np.load(traj_path + '_num_traj_.npy')))  # np.arange(30)
+total_data_idx = np.arange(42085)  # np.arange(30)
 train_idx = total_data_idx[0:int(total_data_idx.shape[0] * 0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0] * 0.7):, ]
 exp_idx = total_data_idx[0:int(total_data_idx.shape[0] * 0.5), ]
