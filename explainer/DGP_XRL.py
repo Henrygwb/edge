@@ -347,7 +347,7 @@ class DGPXRL(object):
             # self.model.train()
             # self.likelihood.train()
             # if epoch % 20 == 0:
-            #     self.save(save_path + '_' + str(epoch) + '_model.data')
+            self.save(save_path + '_' + str(epoch) + '_model.data')
         if save_path:
             self.save(save_path)
         return self.model

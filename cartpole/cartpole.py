@@ -1,7 +1,7 @@
 import os, sys
 
 sys.path.append('..')
-os.environ["CUDA_VISIBLE_DEVICES"] = " "
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import numpy as np
 import argparse
 from explainer.DGP_XRL import DGPXRL
@@ -18,7 +18,7 @@ args = parser.parse_args()
 # Setup env, load the target agent, and collect the trajectories.
 env_name = 'CartPole-v1'
 agent_path = 'agents/{}/'.format(env_name.lower())
-traj_path = 'test_trajs/' + env_name
+traj_path = 'trajs/' + env_name
 # traj_path = None
 num_traj = 30
 max_ep_len = 200
@@ -38,9 +38,9 @@ embed_dim = 4
 input_dim = 4 + embed_dim
 encoder_type = 'MLP'
 rnn_cell_type = 'GRU'
-n_epoch = 2
-batch_size = 4
-save_path = 'exp_model_results/'
+n_epoch = 200
+batch_size = 40
+save_path = 'models/dgp/'
 likelihood_type = 'regression'
 n_stab_samples = 10
 
@@ -313,7 +313,7 @@ elif args.explainer == 'rationale':
 elif args.explainer == 'dgp':
     # Explainer 6 - DGP.
     optimizer = 'adam'
-    num_inducing_points = 10
+    num_inducing_points = 100
     using_ngd = False  # Whether to use natural gradient descent.
     using_ksi = False  # Whether to use KSI approximation, using this with other options as False.
     using_ciq = False  # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
@@ -322,7 +322,7 @@ elif args.explainer == 'dgp':
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
     weight_x = False
     logit = True
-    lambda_1 = 0.01
+    lambda_1 = 0.00001
     local_samples = 10
     likelihood_sample_size = 8
 
