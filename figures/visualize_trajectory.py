@@ -15,24 +15,30 @@ def visualize(data_file, disp_range, output):
 
     num_imgs = max_idx - min_idx
     print(f'{num_imgs} images')
-    grid_length = int(np.sqrt(num_imgs))
-    grid_width = int(num_imgs/grid_length)
-    while grid_length*grid_width != num_imgs:
-        grid_length += 1
-        grid_width = int(num_imgs/grid_length)
-    print(f'{grid_length}x{grid_width} Plot')
-    
-    height = 20
-    width = 10
-    plt.figure(figsize=(width,height))
+    grid_height = int(np.sqrt(num_imgs))
+    grid_width = int(num_imgs/grid_height)
+    while grid_height*grid_width != num_imgs:
+        grid_height += 1
+        grid_width = int(num_imgs/grid_height)
+    print(f'{grid_height}x{grid_width} Plot')
+    from matplotlib import gridspec
 
-    for idx in range(obs.shape[0]):
-        img = obs[idx]
-        ax = plt.subplot(int(num_imgs / grid_width + 1), grid_width, idx + 1)
-        ax.set_axis_off()
-        ax.set_title(f'{idx + min_idx + 1}')
-        plt.imshow(img)
-    plt.tight_layout()
+    height = 10
+    width = 5
+    plt.figure(figsize=(width,height))
+    gs = gridspec.GridSpec(grid_height, grid_width,
+         wspace=0.1, hspace=0.2, 
+         top=1.-0.5/(grid_height+1), bottom=0.5/(grid_height+1), 
+         left=0.5/(grid_width+1), right=1-0.5/(grid_width+1))
+
+    for i in range(grid_height):
+        for j in range(grid_width):
+            img = obs[i*grid_width + j]
+            ax = plt.subplot(gs[i,j])
+            ax.set_axis_off()
+            ax.set_title(i*grid_width + j + min_idx + 1, fontsize=6, pad=0)
+            ax.imshow(img)
+            
     plt.savefig(output)
 
 if __name__ == '__main__':

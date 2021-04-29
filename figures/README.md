@@ -17,3 +17,5 @@ To plot trajectories:
 or
 
 `python visualize_trajectory.py --data ./Pong-v0_traj_0.npz --out trajectories.png` to plot all images
+
+Tune `hspace` and `wspace` in `visualize_trajectory.py` to try out different column and row spacing
