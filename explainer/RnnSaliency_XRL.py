@@ -307,8 +307,11 @@ class RnnSaliency(object):
             act_encoded = self.model.act_embedding(acts)
             encoded = torch.cat((obs_encoded, act_encoded), -1)
         else:
-            acts_encoded = self.model.act_embedding(acts)
-            x = torch.cat((obs, acts_encoded), -1)
+            if self.n_action != 0:
+               acts_encoded = self.model.act_embedding(acts)
+               x = torch.cat((obs, acts_encoded), -1)
+            else:
+               x = torch.cat((obs, acts), -1)
             encoded = self.model.mlp_encoder(x)  # (N, T, Hiddens[-2]) get the hidden representation of every time step.
         return encoded.cpu()
 
