@@ -108,9 +108,12 @@ class CnnRnnEncoder(nn.Module):
         return step_embed
 
 
+# self.model = MlpRnnEncoder(seq_len, input_dim, hiddens, n_action, embed_dim, dropout_rate,
+#                            rnn_cell_type, normalize=normalize)
+
 class MlpRnnEncoder(nn.Module):
-    def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU',
-                 use_input_attention=False, normalize=False):
+    def __init__(self, seq_len, input_dim, hiddens, n_action, embed_dim, dropout_rate=0.25,
+                 rnn_cell_type='GRU', use_input_attention=False, normalize=False):
         """
         RNN structure (MLP+seq2seq) (\theta_1: RNN parameters).
         :param seq_len: trajectory length.
@@ -124,9 +127,14 @@ class MlpRnnEncoder(nn.Module):
         super(MlpRnnEncoder, self).__init__()
         self.normalize = normalize
         self.seq_len = seq_len
-        self.input_dim = input_dim + 1
+        self.input_dim = input_dim
         self.hidden_dim = hiddens[-1]
         self.rnn_cell_type = rnn_cell_type
+        self.n_action = n_action
+
+        if n_action != 0:
+            self.act_embedding = nn.Embedding(n_action, embed_dim)
+
         self.mlp_encoder = nn.Sequential()
         for i in range(len(hiddens) - 1):
             if i == 0:
@@ -172,6 +180,8 @@ class MlpRnnEncoder(nn.Module):
             mean = torch.mean(x, dim=(0, 1))[None, None, :]
             std = torch.std(x, dim=(0, 1))[None, None, :]
             x = (x - mean) / std
+        if self.n_action != 0:
+            y = self.act_embedding(y)
         x = torch.cat((x, y), -1)
         mlp_encoded = self.mlp_encoder(x)  # (N, T, Hiddens[-2]) get the hidden representation of every time step.
         if self.rnn_cell_type == 'GRU':
@@ -416,8 +426,8 @@ class RationaleNetGenerator(nn.Module):
                                          n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                          normalize=normalize)
         else:
-            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
-
+            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, n_action, embed_dim, dropout_rate,
+                                         rnn_cell_type, normalize=normalize)
         self.z_dim = 2
         self.hidden = nn.Linear(hiddens[-1], self.z_dim)
 
@@ -493,7 +503,8 @@ class RationaleNetEncoder(nn.Module):
                                        n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                        normalize=normalize)
         else:
-            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
+            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, n_action, embed_dim, dropout_rate,
+                                         rnn_cell_type, normalize=normalize)
 
         if torch.cuda.is_available():
             self.use_cuda = True

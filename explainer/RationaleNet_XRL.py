@@ -21,7 +21,6 @@ from .quantitative_test import exp_fid2nn_topk, exp_fid2nn_zero_one, exp_stablit
 class RationaleNet(object):
     def __init__(self, seq_len, len_diff, input_dim, likelihood_type, hiddens, n_action=0, num_class=0, embed_dim=16,
                  encoder_type='MLP', dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
-
         """
         :param seq_len: trajectory length.
         :param len_diff: trajectory len_diff.

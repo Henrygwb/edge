@@ -41,7 +41,9 @@ class Rudder(object):
                                        n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                        normalize=normalize)
         else:
-            self.model = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
+            self.model = MlpRnnEncoder(seq_len, input_dim, hiddens, n_action, embed_dim, dropout_rate,
+                                       rnn_cell_type, normalize=normalize)
+
         self.fc_out = torch.nn.Sequential(
             torch.nn.Linear(hiddens[-1], 1),
             torch.nn.Flatten())

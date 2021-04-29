@@ -48,8 +48,8 @@ class RnnAttn(object):
                                        n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                        use_input_attention=use_input_attention, normalize=normalize)
         else:
-            self.model = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type,
-                                       use_input_attention=use_input_attention, normalize=normalize)
+            self.model = MlpRnnEncoder(seq_len, input_dim, hiddens, n_action, embed_dim, dropout_rate,
+                                       rnn_cell_type, use_input_attention=use_input_attention, normalize=normalize)
 
         if self.attention_type == 'tanh':
             print('Using tanh attention.')
