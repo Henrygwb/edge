@@ -7,3 +7,13 @@ To use defaults and generate both figs:
 That is the same as
 
 `python gen_figs.py --stab --fid --output_dir ./outputs --metric_dir .`
+
+-------
+
+To plot trajectories:
+
+`python visualize_trajectory.py --data ./Pong-v0_traj_0.npz --out trajectories.png --from_idx 150 --to_idx 200`
+
+or
+
+`python visualize_trajectory.py --data ./Pong-v0_traj_0.npz --out trajectories.png` to plot all images
