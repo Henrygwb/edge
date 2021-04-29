@@ -112,13 +112,15 @@ class CnnRnnEncoder(nn.Module):
 #                            rnn_cell_type, normalize=normalize)
 
 class MlpRnnEncoder(nn.Module):
-    def __init__(self, seq_len, input_dim, hiddens, n_action, embed_dim, dropout_rate=0.25,
+    def __init__(self, seq_len, input_dim, hiddens, n_action=0, embed_dim=4, dropout_rate=0.25,
                  rnn_cell_type='GRU', use_input_attention=False, normalize=False):
         """
         RNN structure (MLP+seq2seq) (\theta_1: RNN parameters).
         :param seq_len: trajectory length.
         :param input_dim: the dimensionality of the input (Concatenate of observation and action).
         :param hiddens: hidden layer dimensions.
+        :param n_action: num of possible input action, 0 if the action space is continuous.
+        :param embed_dim: action embedding dim for discrete input action.
         :param dropout_rate: dropout rate.
         :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
         :param use_input_attention: Whether to use the input cell attention.
@@ -426,8 +428,8 @@ class RationaleNetGenerator(nn.Module):
                                          n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                          normalize=normalize)
         else:
-            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, n_action, embed_dim, dropout_rate,
-                                         rnn_cell_type, normalize=normalize)
+            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, n_action=n_action, embed_dim=embed_dim,
+                                         dropout_rate=dropout_rate, rnn_cell_type=rnn_cell_type, normalize=normalize)
         self.z_dim = 2
         self.hidden = nn.Linear(hiddens[-1], self.z_dim)
 
@@ -500,11 +502,11 @@ class RationaleNetEncoder(nn.Module):
 
         if self.encoder_type == 'CNN':
             self.encoder = CnnRnnEncoder(seq_len, input_dim, input_channles=1, hidden_dim=hiddens[-1],
-                                       n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
-                                       normalize=normalize)
+                                         n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
+                                         normalize=normalize)
         else:
-            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, n_action, embed_dim, dropout_rate,
-                                         rnn_cell_type, normalize=normalize)
+            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, n_action=n_action, embed_dim=embed_dim,
+                                         dropout_rate=dropout_rate, rnn_cell_type=rnn_cell_type, normalize=normalize)
 
         if torch.cuda.is_available():
             self.use_cuda = True

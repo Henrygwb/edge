@@ -111,12 +111,15 @@ class CnnRnnEncoder(nn.Module):
 
 
 class MlpRnnEncoder(nn.Module):
-    def __init__(self, seq_len, input_dim, hiddens, dropout_rate=0.25, rnn_cell_type='GRU', normalize=False):
+    def __init__(self, seq_len, input_dim, hiddens, n_action=0, embed_dim=4, dropout_rate=0.25, rnn_cell_type='GRU',
+                 normalize=False):
         """
         RNN structure (MLP+seq2seq) (\theta_1: RNN parameters).
         :param seq_len: trajectory length.
         :param input_dim: the dimensionality of the input (Concatenate of observation and action)
         :param hiddens: hidden layer dimensions.
+        :param n_action: num of possible input action, 0 if the action space is continuous.
+        :param embed_dim: action embedding dim for discrete input action.
         :param dropout_rate: dropout rate.
         :param rnn_cell_type: rnn layer type ('GRU' or 'LSTM').
         :param normalize: whether to normalize the inputs.
@@ -127,6 +130,11 @@ class MlpRnnEncoder(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hiddens[-1]
         self.rnn_cell_type = rnn_cell_type
+        self.n_action = n_action
+
+        if n_action != 0:
+            self.act_embedding = nn.Embedding(n_action, embed_dim)
+
         self.encoder = nn.Sequential()
         for i in range(len(hiddens)-1):
             if i == 0:
@@ -163,6 +171,8 @@ class MlpRnnEncoder(nn.Module):
             mean = torch.mean(x, dim=(0, 1))[None, None, :]
             std = torch.std(x, dim=(0, 1))[None, None, :]
             x = (x - mean)/std
+        if self.n_action != 0:
+            y = self.act_embedding(y)
         x = torch.cat((x, y), -1)
         mlp_encoded = self.encoder(x) # (N, T, Hiddens[-2]) get the hidden representation of every time step.
         if self.rnn_cell_type == 'GRU':
@@ -302,7 +312,8 @@ class DGPXRLModel(gpytorch.Module):
                                        n_action=n_action, embed_dim=embed_dim, rnn_cell_type=rnn_cell_type,
                                        normalize=normalize)
         else:
-            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, dropout_rate, rnn_cell_type, normalize=normalize)
+            self.encoder = MlpRnnEncoder(seq_len, input_dim, hiddens, n_action, embed_dim, dropout_rate,
+                                         rnn_cell_type, normalize=normalize)
 
         if inducing_points is None:
             inducing_points = torch.randn(num_inducing_points, 2*hiddens[-1]) # Pong game.

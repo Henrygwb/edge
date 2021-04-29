@@ -870,27 +870,34 @@ class DGPXRL(object):
             self.model, self.likelihood = self.model.cuda(), self.likelihood.cuda()
 
         f_predicted, features = self.model(obs, acts)
-        function_samples = f_predicted.rsample(torch.Size([8])).cpu().detach()
-        function_samples = function_samples.view(function_samples.size(0), rewards.shape[0], obs.shape[1])
-        if self.weight_x:
-            input_encoding = features.sum(-1)
-            mixing_weights = self.likelihood.weight_encoder(input_encoding)
-            mixing_weights = mixing_weights.view(mixing_weights.shape[0], obs.shape[1], self.likelihood.num_classes)
-            mixing_weights = mixing_weights.cpu().detach()
-        else:
-            mixing_weights = self.likelihood.mixing_weights.cpu().detach()
-            mixing_weights = mixing_weights.t()
-            mixing_weights = mixing_weights.repeat(rewards.shape[0], 1, 1)
-        for i in range(rewards.shape[0]):
-            mixing_weights[i, nonimportance_id[i], rewards[i]] = 0
-        mixed_fs = torch.einsum('bxy, xyk->bxk', (function_samples, mixing_weights)) # num_classes x num_data
-
         if self.likelihood_type == 'classification':
+            function_samples = f_predicted.rsample(torch.Size([8])).cpu().detach()
+            function_samples = function_samples.view(function_samples.size(0), rewards.shape[0], obs.shape[1])
+            if self.weight_x:
+                input_encoding = features.sum(-1)
+                mixing_weights = self.likelihood.weight_encoder(input_encoding)
+                mixing_weights = mixing_weights.view(mixing_weights.shape[0], obs.shape[1], self.likelihood.num_classes)
+                mixing_weights = mixing_weights.cpu().detach()
+            else:
+                mixing_weights = self.likelihood.mixing_weights.cpu().detach()
+                mixing_weights = mixing_weights.t()
+                mixing_weights = mixing_weights.repeat(rewards.shape[0], 1, 1)
+            for i in range(rewards.shape[0]):
+                mixing_weights[i, nonimportance_id[i], rewards[i]] = 0 # maybe no need to select the last dim.
+            mixed_fs = torch.einsum('bxy, xyk->bxk', (function_samples, mixing_weights)) # num_classes x num_data
+
             output = torch.nn.functional.softmax(mixed_fs, dim=-1)
             preds = output.mean(0)
         else:
-            output = mixed_fs
-            preds = output.mean
+            mean = f_predicted.mean.cpu().detach()
+            mean = mean.view(rewards.shape[0], obs.shape[1])
+            mixing_weights = self.likelihood.mixing_weights.cpu().detach()
+            mixing_weights = mixing_weights.t()
+            mixing_weights = mixing_weights.repeat(rewards.shape[0], 1, 1)
+            for i in range(rewards.shape[0]):
+                mixing_weights[i, nonimportance_id[i], 0] = 0 # maybe no need to select the last dim.
+            output = torch.einsum('xy, xyk->xk', (mean, mixing_weights)) # num_classes x num_data
+            preds = output.flatten()
 
         preds = preds.cpu().detach().numpy()
 

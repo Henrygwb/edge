@@ -196,10 +196,10 @@ class RnnAttn(object):
                 print('Train MAE: {}'.format(mae / float(train_idx.shape[0])))
                 print('Train MSE: {}'.format(mse / float(train_idx.shape[0])))
             scheduler.step()
-            self.test(test_idx, batch_size, traj_path)
-            self.model.train()
-            self.likelihood.train()
-            self.attention.train()
+            # self.test(test_idx, batch_size, traj_path)
+            # self.model.train()
+            # self.likelihood.train()
+            # self.attention.train()
 
         if save_path:
             self.save(save_path)

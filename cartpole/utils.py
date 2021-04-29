@@ -1,6 +1,7 @@
 import numpy as np
 from stable_baselines import PPO2
 
+
 def rollout(agent_path, env, num_traj, max_ep_len=1e3, save_path=None, render=False, save_obs=False):
 
     model = PPO2.load(agent_path)
