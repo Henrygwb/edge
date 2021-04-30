@@ -120,7 +120,7 @@ def rl_fed(env, seed, model, original_traj, importance, max_ep_len=1e3, render=F
         act, _, _, _ = policy.step(obs=observation, deterministic=True)
         if mask_act:
             if start_step+i in importance:
-                act_set_1 = act_set[act_set != action]
+                act_set_1 = act_set[act_set != act]
                 act = np.random.choice(act_set_1)
         observation, reward, done, infos = env.step(act)
         if render: env.render()
