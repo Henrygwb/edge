@@ -100,3 +100,36 @@ def rollout(agent_path, env, num_traj, max_ep_len=1e3, save_path=None, render=Fa
             traj_count += 1
     np.save(save_path + '_max_length_.npy', max_ep_length)
     np.save(save_path + '_num_traj_.npy', traj_count)
+
+
+def rl_fed(env, seed, model, original_traj, importance, max_ep_len=1e3, render=False, mask_act=False):
+
+    acts_orin = original_traj['actions']
+    traj_len = np.count_nonzero(acts_orin)
+    start_step = max_ep_len - traj_len
+
+    env.seed(seed)
+    env.action_space.seed(seed)
+
+    episode_length, epr, done = 0, 0, False  # bookkeeping
+    observation = env.reset()
+
+    act_set = np.array([0, 1])
+    for i in range(traj_len):
+        action = acts_orin[start_step+i] - 1
+        act, _, _, _ = policy.step(obs=observation, deterministic=True)
+        if mask_act:
+            if start_step+i in importance:
+                act_set_1 = act_set[act_set != act]
+                act = np.random.choice(act_set_1)
+        observation, reward, done, infos = env.step(act)
+        if render: env.render()
+        epr += reward
+        # save info!
+        episode_length += 1
+        if done:
+            assert reward != 0
+            break
+
+    print('step # {}, reward {:.0f}.'.format(episode_length, epr))
+    return epr

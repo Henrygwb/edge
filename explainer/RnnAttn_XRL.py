@@ -295,6 +295,8 @@ class RnnAttn(object):
                 preds_all.extend(preds.numpy().tolist())
                 rewards_all.extend(rewards.numpy().tolist())
             else:
+                if len(preds.shape) == 2:
+                    preds = preds.flatten()
                 mae += torch.sum(torch.abs(preds - rewards))
                 mse += torch.sum(torch.square(preds - rewards))
 

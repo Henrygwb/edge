@@ -1,7 +1,7 @@
 import os, sys
 
 sys.path.append('..')
-os.environ["CUDA_VISIBLE_DEVICES"] = " "
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import numpy as np
 import argparse
 from explainer.DGP_XRL import DGPXRL
@@ -18,7 +18,8 @@ args = parser.parse_args()
 # Setup env, load the target agent, and collect the trajectories.
 env_name = 'CartPole-v1'
 agent_path = 'agents/{}/'.format(env_name.lower())
-traj_path = 'trajs_test/' + env_name
+traj_path = 'trajs/' + env_name
+
 # traj_path = None
 num_traj = 30
 max_ep_len = 200
@@ -38,9 +39,15 @@ embed_dim = 4
 input_dim = 4 + embed_dim
 encoder_type = 'MLP'
 rnn_cell_type = 'GRU'
+<<<<<<< HEAD
 n_epoch = 50
 batch_size = 4
 save_path = 'exp_model_results/'
+=======
+n_epoch = 200
+batch_size = 40
+save_path = 'models/dgp/'
+>>>>>>> e238ad3961fe41b2f9ec48d5a47b36566f2b1863
 likelihood_type = 'regression'
 n_stab_samples = 10
 
@@ -322,7 +329,7 @@ elif args.explainer == 'dgp':
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
     weight_x = True
     logit = True
-    lambda_1 = 0.01
+    lambda_1 = 0.00001
     local_samples = 10
     likelihood_sample_size = 8
 
