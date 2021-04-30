@@ -218,7 +218,7 @@ for k in range(3):
         importance_traj_10 = truncate_importance(importance_traj, 10)
         importance_traj_30 = truncate_importance(importance_traj, 30)
         importance_traj_50 = truncate_importance(importance_traj, 50)
-        original_traj = np.load('trajs_exp/youshallnotpasshumans_v0_traj_{}.npz'.format(i))
+        original_traj = np.load('trajs_exp/CartPole-v1_traj_{}.npz'.format(i))
         orin_reward = original_traj['final_rewards']
         print(orin_reward)
         if k == 0:
@@ -322,6 +322,3 @@ explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
 metrics_all = ['Top5', 'Top15', 'Top25']
 draw_fid_fig_t(rl_fid_all[:, :-1, ...], explainer_all, metrics_all, save_path+'figures_best_weight_x_true/rl_fid_bar_our.pdf',
                box_plot=False, log_scale=False)
-
-
-
