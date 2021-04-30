@@ -161,13 +161,12 @@ for k in range(5):
         importance_traj_50 = truncate_importance(importance_traj, 50)
         original_traj = np.load('trajs_exp/CartPole-v1_traj_{}.npz'.format(i))
         orin_reward = original_traj['final_rewards']
+        
         print(orin_reward)
         if k == 0:
             finals_all[i] = orin_reward
-        seed = int(original_traj['seeds'])
-
         orin_reward = int(orin_reward * (200 - 106) + 106)
-
+        seed = int(original_traj['seeds'])
         rl_fed(env=env, seed=seed, model=model, original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
                render=False, mask_act=False)
         replay_reward_10 = rl_fed(env=env, seed=seed, model=model, 
@@ -225,11 +224,7 @@ for k in range(3):
         if k == 0:
             finals_all[i] = orin_reward
         seed = int(original_traj['seeds'])
-
-        if orin_reward == 0:
-            orin_reward = -1000
-        else:
-            orin_reward = 1000
+        orin_reward = int(orin_reward * (200 - 106) + 106)
         rl_fed(env=env, seed=seed, model=model, original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
                                           render=False, mask_act=False)
         replay_reward_10 = rl_fed(env=env, seed=seed, model=model, 
