@@ -39,15 +39,9 @@ embed_dim = 4
 input_dim = 4 + embed_dim
 encoder_type = 'MLP'
 rnn_cell_type = 'GRU'
-<<<<<<< HEAD
-n_epoch = 50
-batch_size = 4
-save_path = 'exp_model_results/'
-=======
 n_epoch = 200
 batch_size = 40
 save_path = 'models/dgp/'
->>>>>>> e238ad3961fe41b2f9ec48d5a47b36566f2b1863
 likelihood_type = 'regression'
 n_stab_samples = 10
 
