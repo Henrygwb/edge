@@ -98,7 +98,7 @@ class DGPXRL(object):
         # Build the likelihood layer (Regression and classification).
         if self.likelihood_type == 'regression':
             print('Conduct regression and use GaussianLikelihood')
-            self.likelihood = CustomizedGaussianLikelihood(num_features=seq_len, weight_x=weight_x)
+            self.likelihood = CustomizedGaussianLikelihood(num_features=seq_len, weight_x=weight_x, hidden_dims=2*hiddens[-1])
         elif self.likelihood_type == 'classification':
             print('Conduct classification and use softmaxLikelihood')
             if self.weight_x:
@@ -287,20 +287,21 @@ class DGPXRL(object):
 
                         self.likelihood_regular_optimizer.zero_grad()
                         if self.weight_x:
-                            output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
-                            features_sum = features.detach().sum(-1)
-                            weight_output = self.likelihood.weight_encoder(features_sum)
-                            weight_output = weight_output.detach()
-                            eps = eps * weight_output.abs().max()
-                            local_perturbations = torch.rand(local_samples, features.shape[0], features.shape[1])
-                            if torch.cuda.is_available():
-                                local_perturbations = local_perturbations.cuda()
-                            local_perturbations = local_perturbations * 2 * eps - eps
-                            perturbed_output = self.likelihood.weight_encoder(features_sum+local_perturbations)
-                            local_linear_loss = torch.abs(weight_output-perturbed_output)
-                            local_linear_loss = local_linear_loss.sum((1, 2)).mean()
-                            # local_linear_loss.backward()
-                            loss_reg_sum += local_linear_loss
+                            local_linear_loss = 0
+                            # output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
+                            # features_sum = features.detach().sum(-1)
+                            # weight_output = self.likelihood.weight_encoder(features_sum)
+                            # weight_output = weight_output.detach()
+                            # eps = eps * weight_output.abs().max()
+                            # local_perturbations = torch.rand(local_samples, features.shape[0], features.shape[1])
+                            # if torch.cuda.is_available():
+                            #     local_perturbations = local_perturbations.cuda()
+                            # local_perturbations = local_perturbations * 2 * eps - eps
+                            # perturbed_output = self.likelihood.weight_encoder(features_sum+local_perturbations)
+                            # local_linear_loss = torch.abs(weight_output-perturbed_output)
+                            # local_linear_loss = local_linear_loss.sum((1, 2)).mean()
+                            # # local_linear_loss.backward()
+                            # loss_reg_sum += local_linear_loss
                         else:
                             lasso_term = torch.norm(self.likelihood.mixing_weights, p=1) # lasso
                             lasso_term.backward()
@@ -686,15 +687,11 @@ class DGPXRL(object):
         covar_step = self.model.gp_layer.step_kernel(features_reshaped)
         covar_traj = self.model.gp_layer.traj_kernel(features_reshaped)
 
-        if self.weight_x:
+        if self.weight_x and self.likelihood_type == 'classification':
             input_encoding = features.sum(-1)
             importance_all = self.likelihood.weight_encoder(input_encoding)
-            if self.likelihood_type == 'classification':
-                importance_all = importance_all.view(importance_all.shape[0], self.likelihood.num_features,
-                                                     self.likelihood.num_classes)
-            else:
-                importance_all = importance_all.view(importance_all.shape[0], self.likelihood.num_features, 1)
-
+            importance_all = importance_all.view(importance_all.shape[0], self.likelihood.num_features,
+                                                 self.likelihood.num_classes)
         else:
             importance_all = self.likelihood.mixing_weights.clone()
             importance_all = importance_all.transpose(1, 0)
@@ -891,11 +888,13 @@ class DGPXRL(object):
         else:
             mean = f_predicted.mean.cpu().detach()
             mean = mean.view(rewards.shape[0], obs.shape[1])
+            mean_bias = self.likelihood.weight_encoder(features).squeeze(-1)
             mixing_weights = self.likelihood.mixing_weights.cpu().detach()
             mixing_weights = mixing_weights.t()
             mixing_weights = mixing_weights.repeat(rewards.shape[0], 1, 1)
             for i in range(rewards.shape[0]):
                 mixing_weights[i, nonimportance_id[i], 0] = 0 # maybe no need to select the last dim.
+            mean = mean + mean_bias
             output = torch.einsum('xy, xyk->xk', (mean, mixing_weights)) # num_classes x num_data
             preds = output.flatten()
 

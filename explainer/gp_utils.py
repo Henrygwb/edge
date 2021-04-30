@@ -316,12 +316,12 @@ class DGPXRLModel(gpytorch.Module):
                                          rnn_cell_type, normalize=normalize)
 
         if inducing_points is None:
-            inducing_points = torch.randn(num_inducing_points, 2*hiddens[-1]) # Pong game.
-            # inducing_points = torch.rand(num_inducing_points, 2 * hiddens[-1]) # MuJoCo game.
+            # inducing_points = torch.randn(num_inducing_points, 2*hiddens[-1]) # Pong game.
+            inducing_points = torch.rand(num_inducing_points, 2 * hiddens[-1]) # MuJoCo game.
         if mean_inducing_points is None:
-            mean_inducing_points = torch.randn(num_inducing_points*5, 2*hiddens[-1])
-            # mean_inducing_points = torch.rand(num_inducing_points*5, 2 * hiddens[-1]) # MuJoCo game.
-
+            # mean_inducing_points = torch.randn(num_inducing_points*5, 2*hiddens[-1])
+            mean_inducing_points = torch.rand(num_inducing_points*5, 2 * hiddens[-1]) # MuJoCo game.
+        self.batch_norm = nn.BatchNorm1d(hiddens[-1] * 2)
         self.gp_layer = GaussianProcessLayer(input_dim_step=hiddens[-1], input_dim_traj=hiddens[-1],
                                              num_inducing_points=num_inducing_points, inducing_points=inducing_points,
                                              mean_inducing_points=mean_inducing_points, grid_bounds=grid_bounds,
@@ -341,6 +341,7 @@ class DGPXRLModel(gpytorch.Module):
         traj_embedding = traj_embedding[:, None, :].repeat(1, self.seq_len, 1) # (N, D) -> (N, T, D)
         features = torch.cat([step_embedding, traj_embedding], dim=-1) # (N, T, 2D)
         features_reshaped = features.view(x.size(0)*x.size(1), features.size(-1))
+        features_reshaped = self.batch_norm(features_reshaped)
         res = self.gp_layer(features_reshaped)
         return res, features
 
@@ -589,7 +590,7 @@ class CustomizedGaussianLikelihood(Likelihood):
     Assumes a standard homoskedastic (variance of the residual is constant) and IID noise model.
     p(y \mid f) = fW + \epsilon, \quad \epsilon \sim \mathcal N (0, \sigma^2)
     """
-    def __init__(self, num_features, weight_x=False,
+    def __init__(self, num_features, weight_x=False, hidden_dims=None,
                  noise_prior=None, noise_constraint=None, batch_shape=torch.Size(), **kwargs):
         """
         :param num_features: trajectory length.
@@ -605,16 +606,12 @@ class CustomizedGaussianLikelihood(Likelihood):
         self.weight_x = weight_x
 
         if self.weight_x:
-            self.weight_encoder = nn.Sequential(
-                nn.Linear(num_features, num_features),
-                nn.LeakyReLU(),
-                nn.Linear(num_features, num_features)
-            )
-        else:
-            self.register_parameter(
-                name="mixing_weights",
-                parameter=torch.nn.Parameter(torch.randn(1, num_features).div_(num_features)),
-            )
+            self.weight_encoder = nn.Sequential(nn.Linear(hidden_dims, 1))
+
+        self.register_parameter(
+            name="mixing_weights",
+            parameter=torch.nn.Parameter(torch.randn(1, num_features).div_(num_features)),
+        )
         self.num_features = num_features
 
     def _shaped_noise_covar(self, base_shape: torch.Size, *params, **kwargs):
@@ -666,11 +663,11 @@ class CustomizedGaussianLikelihood(Likelihood):
         :return: E_{f~q(f)}[log p(y|f)].
         """
         if self.weight_x:
-            input_encoding = kwargs['input_encoding'].sum(-1)
-            mixing_weights = self.weight_encoder(input_encoding)
-            mixing_weights = mixing_weights.view(mixing_weights.shape[0], 1, self.num_features)
-            self.mixing_weights = mixing_weights.mean(0)
-
+            mean_bias = self.weight_encoder(kwargs['input_encoding']).squeeze(-1)
+            # input_encoding = kwargs['input_encoding'][:, -1, :]
+            # mean_bias = self.weight_encoder(input_encoding).flatten()
+        else:
+            mean_bias = 0
         mean, covar = input.mean, input.covariance_matrix # mean and covar of q(f).
         # num_event_dim = len(input.event_shape)
         num_data = int(mean.shape[0]/self.num_features)
@@ -712,7 +709,7 @@ class CustomizedGaussianLikelihood(Likelihood):
         exp_ff = exp_ff * mask
         exp_ff = exp_ff @ right_weight
 
-        mean_matrix = mean.view(num_data, self.num_features)
+        mean_matrix = mean.view(num_data, self.num_features) + mean_bias
         mean_w = mean_matrix @ w_transpose
         exp_ff = exp_ff.flatten()
         mean_w = mean_w.flatten()
@@ -734,16 +731,18 @@ class CustomizedGaussianLikelihood(Likelihood):
         :return: p(y|f).
         """
         if self.weight_x:
-            input_encoding = kwargs['input_encoding'].sum(-1)
-            mixing_weights = self.weight_encoder(input_encoding)
-            mixing_weights = mixing_weights.view(mixing_weights.shape[0], 1, self.num_features)
-            self.mixing_weights = mixing_weights.mean(0)
+            mean_bias = self.weight_encoder(kwargs['input_encoding']).squeeze(-1)
+            # input_encoding = kwargs['input_encoding'][:, -1, :]
+            # mean_bias = self.weight_encoder(input_encoding).flatten()
+        else:
+            mean_bias = 0
 
         num_data, num_features = function_samples.shape[-2:]
         function_samples = function_samples.view(function_samples.size(0),
                                                    num_data/self.num_features, self.num_features) # (N_sample, n, T)
-
+        function_samples = function_samples + mean_bias
         function_samples = function_samples @ self.mixing_weights # (N_sample, n, 1)
+        function_samples = function_samples
         noise = self._shaped_noise_covar(function_samples.shape, *params, **kwargs).diag()
         return base_distributions.Normal(function_samples, noise.sqrt())
 
@@ -773,14 +772,16 @@ class CustomizedGaussianLikelihood(Likelihood):
                  cov[fW^{t}]_{ij}= W\Sigma_{i*T:(i+1)*T, j*T:(j+1)*T}W^{T}.
         """
         if self.weight_x:
-            input_encoding = kwargs['input_encoding'].sum(-1)
-            mixing_weights = self.weight_encoder(input_encoding)
-            mixing_weights = mixing_weights.view(mixing_weights.shape[0], 1, self.num_features)
-            self.mixing_weights = mixing_weights.mean(0)
+            mean_bias = self.weight_encoder(kwargs['input_encoding']).squeeze(-1)
+            # input_encoding = kwargs['input_encoding'][:, -1, :]
+            # mean_bias = self.weight_encoder(input_encoding).flatten()
+        else:
+            mean_bias = 0
 
         mean, covar = function_dist.mean, function_dist.lazy_covariance_matrix
         num_data = int(mean.shape[0]/self.num_features)
         mean = mean.view(num_data, self.num_features)
+        mean = mean + mean_bias
         mean = mean @ self.mixing_weights.transpose(-2, -1)
         mean = mean.flatten()
         # Matrix form of the covariance matrix.

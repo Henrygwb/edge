@@ -18,7 +18,7 @@ args = parser.parse_args()
 # Setup env, load the target agent, and collect the trajectories.
 env_name = 'CartPole-v1'
 agent_path = 'agents/{}/'.format(env_name.lower())
-traj_path = 'test_trajs/' + env_name
+traj_path = 'trajs_test/' + env_name
 # traj_path = None
 num_traj = 30
 max_ep_len = 200
@@ -28,7 +28,7 @@ num_class = 1
 seq_len = 200
 n_action = 3
 len_diff = max_ep_len - seq_len
-total_data_idx = np.arange(42085)  # np.arange(30)
+total_data_idx = np.arange(151)  # np.arange(30)
 train_idx = total_data_idx[0:int(total_data_idx.shape[0] * 0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0] * 0.7):, ]
 exp_idx = total_data_idx[0:int(total_data_idx.shape[0] * 0.5), ]
@@ -38,7 +38,7 @@ embed_dim = 4
 input_dim = 4 + embed_dim
 encoder_type = 'MLP'
 rnn_cell_type = 'GRU'
-n_epoch = 2
+n_epoch = 50
 batch_size = 4
 save_path = 'exp_model_results/'
 likelihood_type = 'regression'
@@ -313,14 +313,14 @@ elif args.explainer == 'rationale':
 elif args.explainer == 'dgp':
     # Explainer 6 - DGP.
     optimizer = 'adam'
-    num_inducing_points = 10
+    num_inducing_points = 100
     using_ngd = False  # Whether to use natural gradient descent.
     using_ksi = False  # Whether to use KSI approximation, using this with other options as False.
     using_ciq = False  # Whether to use Contour Integral Quadrature to approximate K_{zz}^{-1/2}, Use it together with NGD.
     using_sor = False  # Whether to use SoR approximation, not applicable for KSI and CIQ.
     using_OrthogonallyDecouple = False  # Using together NGD may cause numerical issue.
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
-    weight_x = False
+    weight_x = True
     logit = True
     lambda_1 = 0.01
     local_samples = 10
@@ -341,11 +341,11 @@ elif args.explainer == 'dgp':
            + str(using_OrthogonallyDecouple) + '_' + str(weight_x) + '_' + str(lambda_1) + '_' \
            + str(local_samples) + '_' + str(likelihood_sample_size) + '_' + str(logit) + '_' + str(embed_dim)
 
-    dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, local_samples=local_samples,
-                        likelihood_sample_size=likelihood_sample_size,
-                        save_path=save_path + name + '_model.data')
-
-    dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
+    # dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, local_samples=local_samples,
+    #                     likelihood_sample_size=likelihood_sample_size,
+    #                     save_path=save_path + name + '_model.data')
+    #
+    # dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
     dgp_explainer.load(save_path + name + '_model.data')
     dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
 
