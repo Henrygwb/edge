@@ -1,30 +1,32 @@
 import os, sys
 sys.path.append('..')
 os.environ["CUDA_VISIBLE_DEVICES"] = " "
-# import gym
+import gym
 import numpy as np
-# import gym_compete
-# from mujoco.utils import rl_fed, load_agent, load_from_file
+from utils import rl_fed
 from explainer.quantitative_test import truncate_importance, draw_fid_fig, draw_stab_fig, draw_fid_fig_t, compute_rl_fid
+from stable_baselines import PPO2
+from stable_baselines.common import make_vec_env
 
 
 encoder_type = 'MLP'
 rnn_cell_type = 'GRU'
 save_path = 'exp_results/'
+embed_dim = 4
 likelihood_type = 'regression'
 
 # Explainer 1 - Value function.
-sal_value = np.load(save_path + 'value_exp.npz')['sal'][0:2000]
+sal_value = np.load(save_path + 'value_exp.npz')['sal'][0:4200]
 
 # Explainer 2 - Rudder.
-name = 'rudder_' + encoder_type + '_' + rnn_cell_type
+name = 'rudder_' + encoder_type + '_' + rnn_cell_type + '_' + str(embed_dim)
 rudder_fid_results = np.load(save_path + name + '_exp.npz')
 rudder_sal = rudder_fid_results['sal']
 rudder_fid = rudder_fid_results['fid']
 rudder_stab = rudder_fid_results['stab']
 
 # Explainer 3 - RNN + Saliency.
-name = 'saliency_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + str(True)
+name = 'saliency_' + likelihood_type + '_' + encoder_type + '_' + 'LSTM' + '_' + str(True) + '_' + str(embed_dim)
 saliency_fid_results = np.load(save_path + name + '_exp_best.npz')
 saliency_sal = saliency_fid_results['sal']
 saliency_fid = saliency_fid_results['fid']
@@ -32,34 +34,34 @@ saliency_stab = saliency_fid_results['stab']
 
 # Explainer 4 - AttnRNN.
 attention_type = 'tanh'
-name = 'attention_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + attention_type
+name = 'attention_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + attention_type + '_' + str(embed_dim)
 attn_fid_results = np.load(save_path + name + '_exp.npz')
 attn_sal = attn_fid_results['sal']
 attn_fid = attn_fid_results['fid']
 attn_stab = attn_fid_results['stab']
 
 # Explainer 5 - RationaleNet.
-name = 'rationale_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type
+name = 'rationale_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + str(embed_dim)
 rat_fid_results = np.load(save_path + name + '_exp.npz')
 rat_sal = rat_fid_results['sal']
 rat_fid = rat_fid_results['fid']
 rat_stab = rat_fid_results['stab']
 
 # # Explainer 6 - DGP.
-dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_1e-05_10_16_True_exp.npz')
-dgp_1_sal = dgp_1_fid_results['sal']
-dgp_1_fid = dgp_1_fid_results['fid']
-dgp_1_stab = dgp_1_fid_results['stab']
-
-dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_0.01_10_16_True_exp.npz')
-dgp_2_sal = dgp_2_fid_results['sal']
-dgp_2_fid = dgp_2_fid_results['fid']
-dgp_2_stab = dgp_2_fid_results['stab']
-
-dgp_3_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
-dgp_3_sal = dgp_3_fid_results['sal']
-dgp_3_fid = dgp_3_fid_results['fid']
-dgp_3_stab = dgp_3_fid_results['stab']
+# dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_1e-05_10_16_True_exp.npz')
+# dgp_1_sal = dgp_1_fid_results['sal']
+# dgp_1_fid = dgp_1_fid_results['fid']
+# dgp_1_stab = dgp_1_fid_results['stab']
+#
+# dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_0.01_10_16_True_exp.npz')
+# dgp_2_sal = dgp_2_fid_results['sal']
+# dgp_2_fid = dgp_2_fid_results['fid']
+# dgp_2_stab = dgp_2_fid_results['stab']
+#
+# dgp_3_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
+# dgp_3_sal = dgp_3_fid_results['sal']
+# dgp_3_fid = dgp_3_fid_results['fid']
+# dgp_3_stab = dgp_3_fid_results['stab']
 
 # Model Fid/Stab figures.
 
@@ -132,8 +134,9 @@ agent_path = './agents/ppo2_cartpole.zip'
 model = PPO2.load(agent_path)
 model = model.act_model
 
-num_trajs = 30
-env = gym.make(env_name)
+num_trajs = 4200
+env = make_vec_env(env_name, n_envs=1)
+
 
 # Baseline fidelity
 diff_all_10 = np.zeros((5, num_trajs))
@@ -161,14 +164,13 @@ for k in range(5):
         importance_traj_50 = truncate_importance(importance_traj, 50)
         original_traj = np.load('trajs_exp/CartPole-v1_traj_{}.npz'.format(i))
         orin_reward = original_traj['final_rewards']
-        
-        print(orin_reward)
+
         if k == 0:
             finals_all[i] = orin_reward
         orin_reward = int(orin_reward * (200 - 106) + 106)
         seed = int(original_traj['seeds'])
-        rl_fed(env=env, seed=seed, model=model, original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
-               render=False, mask_act=False)
+        # rl_fed(env=env, seed=seed, model=model, original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
+        #        render=False, mask_act=False)
         replay_reward_10 = rl_fed(env=env, seed=seed, model=model, 
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10, 
                                   render=False, mask_act=True)
@@ -193,7 +195,7 @@ print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
 print(np.sum(diff_all_50, 1))
 
-
+'''
 # DGP fidelity
 diff_all_10 = np.zeros((3, num_trajs))
 diff_all_30 = np.zeros((3, num_trajs))
@@ -250,7 +252,6 @@ np.savez('fid_dgp.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_a
 print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
 print(np.sum(diff_all_50, 1))
-'''
 
 
 a1 = np.load('exp_results/fid_baselines.npz')['diff_10']
@@ -290,9 +291,9 @@ draw_fid_fig_t(len_all, explainer_all, metrics_all, save_path+'rl_fid_len_bar.pd
 draw_fid_fig_t(len_all, explainer_all, metrics_all, save_path+'rl_fid_len_box.pdf', box_plot=True, log_scale=False)
 
 eps = 0.001
-rl_fid_10 = compute_rl_fid(diff_10, len_10, diff_max=4, eps=eps)
-rl_fid_30 = compute_rl_fid(diff_30, len_30, diff_max=4, eps=eps)
-rl_fid_50 = compute_rl_fid(diff_50, len_50, diff_max=4, eps=eps)
+rl_fid_10 = compute_rl_fid(diff_10, len_10, diff_max=200, eps=eps)
+rl_fid_30 = compute_rl_fid(diff_30, len_30, diff_max=200, eps=eps)
+rl_fid_50 = compute_rl_fid(diff_50, len_50, diff_max=200, eps=eps)
 
 print(np.mean(rl_fid_10, 1))
 print(np.std(rl_fid_10, 1))
@@ -322,3 +323,4 @@ explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
 metrics_all = ['Top5', 'Top15', 'Top25']
 draw_fid_fig_t(rl_fid_all[:, :-1, ...], explainer_all, metrics_all, save_path+'figures_best_weight_x_true/rl_fid_bar_our.pdf',
                box_plot=False, log_scale=False)
+'''
