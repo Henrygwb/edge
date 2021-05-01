@@ -18,7 +18,7 @@ args = parser.parse_args()
 env_name = 'CartPole-v1'
 agent_path = 'agents/{}/'.format(env_name.lower())
 traj_path = 'trajs_exp/' + env_name
-num_traj = 2000
+num_traj = 4208
 max_ep_len = 200
 
 # Get the shared parameters, prepare training/testing data.
@@ -30,13 +30,13 @@ n_action = 3
 len_diff = max_ep_len - seq_len
 exp_idx = np.arange(num_traj)
 
-hiddens = [64, 32, 8]
+hiddens = [32, 16, 4]
 encoder_type = 'MLP'
 rnn_cell_type = 'GRU'
-n_epoch = 100
-batch_size = 40
+n_epoch = 200
+batch_size = 200
 save_path = 'models/'
-likelihood_type = 'classification'
+likelihood_type = 'regression'
 n_stab_samples = 10
 
 
