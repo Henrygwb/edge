@@ -16,7 +16,7 @@ embed_dim = 4
 likelihood_type = 'regression'
 
 # Explainer 1 - Value function.
-sal_value = np.load(save_path + 'value_exp.npz')['sal'][0:4208]
+sal_value = np.load(save_path + 'value_exp.npz')['sal'][0:4200]
 
 # Explainer 2 - Rudder.
 name = 'rudder_' + encoder_type + '_' + rnn_cell_type + '_' + str(embed_dim)
@@ -134,7 +134,7 @@ agent_path = './agents/ppo2_cartpole.zip'
 model = PPO2.load(agent_path)
 model = model.act_model
 
-num_trajs = 4208
+num_trajs = 4200
 env = make_vec_env(env_name, n_envs=1)
 
 
@@ -148,7 +148,7 @@ importance_len_30 = np.zeros((5, num_trajs))
 importance_len_50 = np.zeros((5, num_trajs))
 finals_all = np.zeros(num_trajs)
 exps_all = [sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
-for k in range(2):
+for k in range(5):
     print(k)
     importance = exps_all[k]
     for i in range(num_trajs):
