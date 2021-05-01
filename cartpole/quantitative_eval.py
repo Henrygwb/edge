@@ -26,7 +26,7 @@ rudder_fid = rudder_fid_results['fid']
 rudder_stab = rudder_fid_results['stab']
 
 # Explainer 3 - RNN + Saliency.
-name = 'saliency_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + str(True)
+name = 'saliency_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + str(True) + '_' + str(embed_dim)
 saliency_fid_results = np.load(save_path + name + '_exp_best.npz')
 saliency_sal = saliency_fid_results['sal']
 saliency_fid = saliency_fid_results['fid']
