@@ -48,20 +48,15 @@ rat_fid = rat_fid_results['fid']
 rat_stab = rat_fid_results['stab']
 
 # # Explainer 6 - DGP.
-# dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_1e-05_10_16_True_exp.npz')
-# dgp_1_sal = dgp_1_fid_results['sal']
-# dgp_1_fid = dgp_1_fid_results['fid']
-# dgp_1_stab = dgp_1_fid_results['stab']
-#
-# dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_0.01_10_16_True_exp.npz')
-# dgp_2_sal = dgp_2_fid_results['sal']
-# dgp_2_fid = dgp_2_fid_results['fid']
-# dgp_2_stab = dgp_2_fid_results['stab']
-#
-# dgp_3_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
-# dgp_3_sal = dgp_3_fid_results['sal']
-# dgp_3_fid = dgp_3_fid_results['fid']
-# dgp_3_stab = dgp_3_fid_results['stab']
+dgp_1_fid_results = np.load(save_path + 'dgp/dgp_regression_GRU_100_False_False_False_False_False_False_True_1e-05_10_16_True_4_exp.npz')
+dgp_1_sal = dgp_1_fid_results['sal']
+dgp_1_fid = dgp_1_fid_results['fid']
+dgp_1_stab = dgp_1_fid_results['stab']
+
+dgp_2_fid_results = np.load(save_path + 'dgp/dgp_regression_GRU_100_False_False_False_False_False_False_True_0.01_10_16_True_4_exp.npz')
+dgp_2_sal = dgp_2_fid_results['sal']
+dgp_2_fid = dgp_2_fid_results['fid']
+dgp_2_stab = dgp_2_fid_results['stab']
 
 # Model Fid/Stab figures.
 
@@ -139,6 +134,7 @@ env = make_vec_env(env_name, n_envs=1)
 
 
 # Baseline fidelity
+"""
 diff_all_10 = np.zeros((5, num_trajs))
 diff_all_30 = np.zeros((5, num_trajs))
 diff_all_50 = np.zeros((5, num_trajs))
@@ -194,19 +190,19 @@ np.savez('fid_baselines.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=
 print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
 print(np.sum(diff_all_50, 1))
+"""
 
-'''
 # DGP fidelity
-diff_all_10 = np.zeros((3, num_trajs))
-diff_all_30 = np.zeros((3, num_trajs))
-diff_all_50 = np.zeros((3, num_trajs))
+diff_all_10 = np.zeros((2, num_trajs))
+diff_all_30 = np.zeros((2, num_trajs))
+diff_all_50 = np.zeros((2, num_trajs))
 
-importance_len_10 = np.zeros((3, num_trajs))
-importance_len_30 = np.zeros((3, num_trajs))
-importance_len_50 = np.zeros((3, num_trajs))
+importance_len_10 = np.zeros((2, num_trajs))
+importance_len_30 = np.zeros((2, num_trajs))
+importance_len_50 = np.zeros((2, num_trajs))
 finals_all = np.zeros(num_trajs)
-exps_all = [dgp_1_sal, dgp_2_sal, dgp_3_sal]
-for k in range(3):
+exps_all = [dgp_1_sal, dgp_2_sal]
+for k in range(2):
     print(k)
     importance = exps_all[k]
     for i in range(num_trajs):
@@ -227,8 +223,8 @@ for k in range(3):
             finals_all[i] = orin_reward
         seed = int(original_traj['seeds'])
         orin_reward = int(orin_reward * (200 - 106) + 106)
-        rl_fed(env=env, seed=seed, model=model, original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
-                                          render=False, mask_act=False)
+        # rl_fed(env=env, seed=seed, model=model, original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
+        #                                   render=False, mask_act=False)
         replay_reward_10 = rl_fed(env=env, seed=seed, model=model, 
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10,
                                   render=False, mask_act=True)
@@ -253,7 +249,7 @@ print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
 print(np.sum(diff_all_50, 1))
 
-
+"""
 a1 = np.load('exp_results/fid_baselines.npz')['diff_10']
 b1 = np.load('exp_results/fid_dgp.npz')['diff_10']
 diff_10 = np.vstack((a1, b1))
@@ -323,4 +319,4 @@ explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
 metrics_all = ['Top5', 'Top15', 'Top25']
 draw_fid_fig_t(rl_fid_all[:, :-1, ...], explainer_all, metrics_all, save_path+'figures_best_weight_x_true/rl_fid_bar_our.pdf',
                box_plot=False, log_scale=False)
-'''
+"""
