@@ -26,7 +26,7 @@ rudder_fid = rudder_fid_results['fid']
 rudder_stab = rudder_fid_results['stab']
 
 # Explainer 3 - RNN + Saliency.
-name = 'saliency_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + str(True) + '_' + str(embed_dim)
+name = 'saliency_' + likelihood_type + '_' + encoder_type + '_' + 'LSTM' + '_' + str(True) + '_' + str(embed_dim)
 saliency_fid_results = np.load(save_path + name + '_exp_best.npz')
 saliency_sal = saliency_fid_results['sal']
 saliency_fid = saliency_fid_results['fid']
@@ -134,7 +134,7 @@ agent_path = './agents/ppo2_cartpole.zip'
 model = PPO2.load(agent_path)
 model = model.act_model
 
-num_trajs = 30
+num_trajs = 4208
 env = make_vec_env(env_name, n_envs=1)
 
 
@@ -147,8 +147,8 @@ importance_len_10 = np.zeros((5, num_trajs))
 importance_len_30 = np.zeros((5, num_trajs))
 importance_len_50 = np.zeros((5, num_trajs))
 finals_all = np.zeros(num_trajs)
-exps_all = [rudder_sal, saliency_sal, attn_sal, rat_sal]
-for k in range(4):
+exps_all = [sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
+for k in range(2):
     print(k)
     importance = exps_all[k]
     for i in range(num_trajs):
@@ -162,16 +162,15 @@ for k in range(4):
         importance_traj_10 = truncate_importance(importance_traj, 10)
         importance_traj_30 = truncate_importance(importance_traj, 30)
         importance_traj_50 = truncate_importance(importance_traj, 50)
-        original_traj = np.load('exp_trajs/CartPole-v1_traj_{}.npz'.format(i))
+        original_traj = np.load('trajs_exp/CartPole-v1_traj_{}.npz'.format(i))
         orin_reward = original_traj['final_rewards']
-        
-        print(orin_reward)
+
         if k == 0:
             finals_all[i] = orin_reward
         orin_reward = int(orin_reward * (200 - 106) + 106)
         seed = int(original_traj['seeds'])
-        rl_fed(env=env, seed=seed, model=model, original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
-               render=False, mask_act=False)
+        # rl_fed(env=env, seed=seed, model=model, original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
+        #        render=False, mask_act=False)
         replay_reward_10 = rl_fed(env=env, seed=seed, model=model, 
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10, 
                                   render=False, mask_act=True)
