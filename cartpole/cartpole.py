@@ -1,7 +1,7 @@
 import os, sys
 
 sys.path.append('..')
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import numpy as np
 import argparse
 from explainer.DGP_XRL import DGPXRL
@@ -29,10 +29,10 @@ num_class = 1
 seq_len = 200
 n_action = 3
 len_diff = max_ep_len - seq_len
-total_data_idx = np.arange(151)  # np.arange(30)
+total_data_idx = np.arange(42085)  # np.arange(30)
 train_idx = total_data_idx[0:int(total_data_idx.shape[0] * 0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0] * 0.7):, ]
-exp_idx = total_data_idx[0:int(total_data_idx.shape[0] * 0.5), ]
+exp_idx = total_data_idx[0:int(total_data_idx.shape[0] * 0.1), ]
 
 hiddens = [32, 16, 4]
 embed_dim = 4
@@ -325,7 +325,7 @@ elif args.explainer == 'dgp':
     logit = True
     lambda_1 = 0.00001
     local_samples = 10
-    likelihood_sample_size = 8
+    likelihood_sample_size = 16
 
     dgp_explainer = DGPXRL(train_len=train_idx.shape[0], seq_len=seq_len, len_diff=len_diff, input_dim=input_dim,
                            hiddens=hiddens, likelihood_type=likelihood_type, lr=0.01, optimizer_type=optimizer,
@@ -342,11 +342,11 @@ elif args.explainer == 'dgp':
            + str(using_OrthogonallyDecouple) + '_' + str(weight_x) + '_' + str(lambda_1) + '_' \
            + str(local_samples) + '_' + str(likelihood_sample_size) + '_' + str(logit) + '_' + str(embed_dim)
 
-    # dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, local_samples=local_samples,
-    #                     likelihood_sample_size=likelihood_sample_size,
-    #                     save_path=save_path + name + '_model.data')
+    dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, local_samples=local_samples,
+                        likelihood_sample_size=likelihood_sample_size,
+                        save_path=save_path + name + '_model.data')
     #
-    # dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
+    dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
     dgp_explainer.load(save_path + name + '_model.data')
     dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
 

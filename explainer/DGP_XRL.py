@@ -889,6 +889,7 @@ class DGPXRL(object):
             mean = f_predicted.mean.cpu().detach()
             mean = mean.view(rewards.shape[0], obs.shape[1])
             mean_bias = self.likelihood.weight_encoder(features).squeeze(-1)
+            mean_bias = mean_bias.cpu().detach()
             mixing_weights = self.likelihood.mixing_weights.cpu().detach()
             mixing_weights = mixing_weights.t()
             mixing_weights = mixing_weights.repeat(rewards.shape[0], 1, 1)
