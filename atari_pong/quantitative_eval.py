@@ -272,9 +272,9 @@ len_50 = np.vstack((a3, b3))
 # draw_fid_fig_t(len_all, explainer_all, metrics_all, save_path+'rl_fid_len_box.pdf', box_plot=True, log_scale=False)
 
 eps = 0.001
-rl_fid_10 = compute_rl_fid(diff_10, len_10, diff_max=200, eps=eps)
-rl_fid_30 = compute_rl_fid(diff_30, len_30, diff_max=200, eps=eps)
-rl_fid_50 = compute_rl_fid(diff_50, len_50, diff_max=200, eps=eps)
+rl_fid_10 = compute_rl_fid(diff_10, len_10, diff_max=4, eps=eps)
+rl_fid_30 = compute_rl_fid(diff_30, len_30, diff_max=4, eps=eps)
+rl_fid_50 = compute_rl_fid(diff_50, len_50, diff_max=4, eps=eps)
 
 # print(np.mean(rl_fid_10, 1))
 # print(np.std(rl_fid_10, 1))
