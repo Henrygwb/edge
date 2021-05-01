@@ -3,10 +3,7 @@ sys.path.append('..')
 os.environ["CUDA_VISIBLE_DEVICES"] = " "
 # import gym
 import numpy as np
-# import gym_compete
-# from mujoco.utils import rl_fed, load_agent, load_from_file
 from explainer.quantitative_test import truncate_importance, draw_fid_fig, draw_stab_fig, draw_fid_fig_t, compute_rl_fid
-
 
 encoder_type = 'MLP'
 rnn_cell_type = 'GRU'
