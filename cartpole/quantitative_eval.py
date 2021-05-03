@@ -1,12 +1,12 @@
 import os, sys
 sys.path.append('..')
 os.environ["CUDA_VISIBLE_DEVICES"] = " "
-import gym
+# import gym
 import numpy as np
-from utils import rl_fed
+# from utils import rl_fed
 from explainer.quantitative_test import truncate_importance, draw_fid_fig, draw_stab_fig, draw_fid_fig_t, compute_rl_fid
-from stable_baselines import PPO2
-from stable_baselines.common import make_vec_env
+# from stable_baselines import PPO2
+# from stable_baselines.common import make_vec_env
 
 
 encoder_type = 'MLP'
@@ -16,7 +16,7 @@ embed_dim = 4
 likelihood_type = 'regression'
 
 # Explainer 1 - Value function.
-sal_value = np.load(save_path + 'value_exp.npz')['sal'][0:4200]
+sal_value = np.load(save_path + 'value_exp.npz')['sal']
 
 # Explainer 2 - Rudder.
 name = 'rudder_' + encoder_type + '_' + rnn_cell_type + '_' + str(embed_dim)
@@ -59,22 +59,41 @@ dgp_2_fid = dgp_2_fid_results['fid']
 dgp_2_stab = dgp_2_fid_results['stab']
 
 # Model Fid/Stab figures.
-
-# Model fid box/bar plot.
-
-# fid_all = np.vstack((rudder_fid[None, ], saliency_fid[None, ], attn_fid[None, ], rat_fid[None, ],
-#                      dgp_2_fid[None, ], dgp_3_fid[None, ]))
+#
+# fid_all = np.vstack((rudder_fid[None, ], saliency_fid[None, ], attn_fid[None, ], rat_fid[None, ], dgp_1_fid[None, ],
+#                      dgp_2_fid[None, ]))
 #
 # explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our', 'Our_x']
 # metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25']
-# save_fig_path = save_path+'figures_weight_x_true_false/model_fid_bar.pdf'
-# draw_fid_fig(fid_all, explainer_all, metrics_all, save_fig_path, box_plot=False)
+# save_fig_path = save_path+'model_fid_bar.pdf'
+# draw_fid_fig(fid_all, explainer_all, metrics_all, save_fig_path, box_plot=False, log_scale=False)
 #
 # stab_all = np.vstack((rudder_stab[None, ...], saliency_stab[None, ...], attn_stab[None,  ...], rat_stab[None,  ...],
-#                       dgp_2_stab[None, ...], dgp_3_stab[None, ...]))
+#                       dgp_1_stab[None, ...], dgp_2_stab[None, ...]))
 # explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our', 'Our_x']
 # metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25']
-# save_stab_path = save_path+'figures_weight_x_true_false/model_stab_bar.pdf'
+# save_stab_path = save_path+'model_stab_bar.pdf'
+# draw_stab_fig(stab_all, explainer_all, save_stab_path, box_plot=False)
+#
+# rudder_fid = np.vstack((rudder_fid, rudder_stab[None, ...]))
+# saliency_fid = np.vstack((saliency_fid, saliency_stab[None, ...]))
+# attn_fid = np.vstack((attn_fid, attn_stab[None, ...]))
+# rat_fid = np.vstack((rat_fid, rat_stab[None, ...]))
+# dgp_1_fid = np.vstack((dgp_1_fid, dgp_1_stab[None, ...]))
+# dgp_2_fid = np.vstack((dgp_2_fid, dgp_2_stab[None, ...]))
+
+# fid_all = np.vstack((rudder_fid[None, ...], saliency_fid[None, ...], attn_fid[None,  ...], rat_fid[None,  ...],
+#                      dgp_2_fid[None, ...]))
+# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
+# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25']
+# save_fig_path = save_path+'figures_x_l1/model_fid_bar.pdf'
+# draw_fid_fig(fid_all, explainer_all, metrics_all, save_fig_path, box_plot=False, log_scale=False)
+#
+# stab_all = np.vstack((rudder_stab[None, ...], saliency_stab[None, ...], attn_stab[None,  ...], rat_stab[None,  ...],
+#                       dgp_2_stab[None, ...]))
+# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
+# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25']
+# save_stab_path = save_path+'figures_x_l1/model_stab_bar.pdf'
 # draw_stab_fig(stab_all, explainer_all, save_stab_path, box_plot=False)
 #
 # rudder_fid = np.vstack((rudder_fid, rudder_stab[None, ...]))
@@ -82,45 +101,16 @@ dgp_2_stab = dgp_2_fid_results['stab']
 # attn_fid = np.vstack((attn_fid, attn_stab[None, ...]))
 # rat_fid = np.vstack((rat_fid, rat_stab[None, ...]))
 # dgp_2_fid = np.vstack((dgp_2_fid, dgp_2_stab[None, ...]))
-# dgp_3_fid = np.vstack((dgp_3_fid, dgp_3_stab[None, ...]))
 #
 # fid_all = np.vstack((rudder_fid[None, ...], saliency_fid[None, ...], attn_fid[None,  ...], rat_fid[None,  ...],
-#                      dgp_2_fid[None, ...], dgp_3_fid[None, ...]))
-# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our', 'Our_x']
-# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25', 'Stability']
-# save_stab_path = save_path+'figures_weight_x_true_false/model_fid_stab_bar.pdf'
-# draw_fid_fig(fid_all, explainer_all, metrics_all, save_stab_path, box_plot=False)
-
-
-# fid_all = np.vstack((rudder_fid[None, ...], saliency_fid[None, ...], attn_fid[None,  ...], rat_fid[None,  ...],
-#                      dgp_3_fid[None, ...]))
-# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
-# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25']
-# save_fig_path = save_path+'figures_best_weight_x_true/model_fid_bar.pdf'
-# draw_fid_fig(fid_all, explainer_all, metrics_all, save_fig_path, box_plot=False)
-#
-# stab_all = np.vstack((rudder_stab[None, ...], saliency_stab[None, ...], attn_stab[None,  ...], rat_stab[None,  ...],
-#                       dgp_3_stab[None, ...]))
-# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
-# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25']
-# save_stab_path = save_path+'figures_best_weight_x_true/model_stab_bar.pdf'
-# draw_stab_fig(stab_all, explainer_all, save_stab_path, box_plot=False)
-#
-# rudder_fid = np.vstack((rudder_fid, rudder_stab[None, ...]))
-# saliency_fid = np.vstack((saliency_fid, saliency_stab[None, ...]))
-# attn_fid = np.vstack((attn_fid, attn_stab[None, ...]))
-# rat_fid = np.vstack((rat_fid, rat_stab[None, ...]))
-# dgp_3_fid = np.vstack((dgp_3_fid, dgp_3_stab[None, ...]))
-#
-# fid_all = np.vstack((rudder_fid[None, ...], saliency_fid[None, ...], attn_fid[None,  ...], rat_fid[None,  ...],
-#                      dgp_3_fid[None, ...]))
+#                      dgp_2_fid[None, ...]))
 # explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
 # metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25', 'Stability']
-# save_stab_path = save_path+'figures_best_weight_x_true/model_fid_stab_bar.pdf'
-# draw_fid_fig(fid_all, explainer_all, metrics_all, save_stab_path, box_plot=False)
+# save_stab_path = save_path+'figures_x_l1/model_fid_stab_bar.pdf'
+# draw_fid_fig(fid_all, explainer_all, metrics_all, save_stab_path, box_plot=False, log_scale=False)
 
-# Fid RL.
-
+# Fid RL.fig
+"""
 env_name = 'CartPole-v1'
 max_ep_len = 200
 agent_path = './agents/ppo2_cartpole.zip'
@@ -134,7 +124,6 @@ env = make_vec_env(env_name, n_envs=1)
 
 
 # Baseline fidelity
-"""
 diff_all_10 = np.zeros((5, num_trajs))
 diff_all_30 = np.zeros((5, num_trajs))
 diff_all_50 = np.zeros((5, num_trajs))
@@ -190,7 +179,6 @@ np.savez('fid_baselines.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=
 print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
 print(np.sum(diff_all_50, 1))
-"""
 
 # DGP fidelity
 diff_all_10 = np.zeros((2, num_trajs))
@@ -248,8 +236,8 @@ np.savez('fid_dgp.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_a
 print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
 print(np.sum(diff_all_50, 1))
-
 """
+
 a1 = np.load('exp_results/fid_baselines.npz')['diff_10']
 b1 = np.load('exp_results/fid_dgp.npz')['diff_10']
 diff_10 = np.vstack((a1, b1))
@@ -275,21 +263,21 @@ b3 = np.load('exp_results/fid_dgp.npz')['len_50']
 len_50 = np.vstack((a3, b3))
 
 # Reward diff and explanation len figures
-explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our_1', 'Our_2', 'Our_3']
-metrics_all = ['Top5', 'Top15', 'Top25']
-
-diff_all = np.vstack((diff_10[None, ...], diff_30[None, ...], diff_50[None,  ...]))
-draw_fid_fig_t(diff_all, explainer_all, metrics_all, save_path+'rl_fid_diff_bar.pdf', box_plot=False, log_scale=False)
-draw_fid_fig_t(diff_all, explainer_all, metrics_all, save_path+'rl_fid_diff_box.pdf', box_plot=True, log_scale=False)
-
-len_all = np.vstack((len_10[None, ...], len_30[None, ...], len_50[None,  ...]))
-draw_fid_fig_t(len_all, explainer_all, metrics_all, save_path+'rl_fid_len_bar.pdf', box_plot=False, log_scale=False)
-draw_fid_fig_t(len_all, explainer_all, metrics_all, save_path+'rl_fid_len_box.pdf', box_plot=True, log_scale=False)
+# explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our_1', 'Our_2']
+# metrics_all = ['Top5', 'Top15', 'Top25']
+#
+# diff_all = np.vstack((diff_10[None, ...], diff_30[None, ...], diff_50[None,  ...]))
+# draw_fid_fig_t(diff_all, explainer_all, metrics_all, save_path+'rl_fid_diff_bar.pdf', box_plot=False, log_scale=False)
+# draw_fid_fig_t(diff_all, explainer_all, metrics_all, save_path+'rl_fid_diff_box.pdf', box_plot=True, log_scale=False)
+#
+# len_all = np.vstack((len_10[None, ...], len_30[None, ...], len_50[None,  ...]))
+# draw_fid_fig_t(len_all, explainer_all, metrics_all, save_path+'rl_fid_len_bar.pdf', box_plot=False, log_scale=False)
+# draw_fid_fig_t(len_all, explainer_all, metrics_all, save_path+'rl_fid_len_box.pdf', box_plot=True, log_scale=False)
 
 eps = 0.001
-rl_fid_10 = compute_rl_fid(diff_10, len_10, diff_max=200, eps=eps)
-rl_fid_30 = compute_rl_fid(diff_30, len_30, diff_max=200, eps=eps)
-rl_fid_50 = compute_rl_fid(diff_50, len_50, diff_max=200, eps=eps)
+rl_fid_10 = compute_rl_fid(diff_10, len_10, diff_max=192.0, eps=eps)
+rl_fid_30 = compute_rl_fid(diff_30, len_30, diff_max=192.0, eps=eps)
+rl_fid_50 = compute_rl_fid(diff_50, len_50, diff_max=192.0, eps=eps)
 
 print(np.mean(rl_fid_10, 1))
 print(np.std(rl_fid_10, 1))
@@ -299,24 +287,17 @@ print(np.mean(rl_fid_50, 1))
 print(np.std(rl_fid_50, 1))
 
 
-# explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our_1', 'Our_2', 'Our_3']
-# metrics_all = ['Top5', 'Top15', 'Top25']
-# rl_fid_all = np.vstack((rl_fid_10[None, ...], rl_fid_30[None, ...], rl_fid_50[None,  ...]))
-# draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'rl_fid_bar.pdf', box_plot=False, log_scale=False)
-# draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'rl_fid_box.pdf', box_plot=True, log_scale=False)
-#
+explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our_1', 'Our_2']
+metrics_all = ['Top5', 'Top15', 'Top25']
+rl_fid_all = np.vstack((rl_fid_10[None, ...], rl_fid_30[None, ...], rl_fid_50[None,  ...]))
+draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'rl_fid_bar.pdf', box_plot=False, log_scale=False)
+
 rl_fid_10 = np.vstack((rl_fid_10[0:5], rl_fid_10[6:]))
 rl_fid_30 = np.vstack((rl_fid_30[0:5], rl_fid_30[6:]))
 rl_fid_50 = np.vstack((rl_fid_50[0:5], rl_fid_50[6:]))
 rl_fid_all = np.vstack((rl_fid_10[None, ...], rl_fid_30[None, ...], rl_fid_50[None,  ...]))
-#
-# explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our', 'Our_x']
-# metrics_all = ['Top5', 'Top15', 'Top25']
-# draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'figures_weight_x_true_false/rl_fid_bar_our.pdf',
-#                box_plot=False, log_scale=False)
 
 explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
 metrics_all = ['Top5', 'Top15', 'Top25']
-draw_fid_fig_t(rl_fid_all[:, :-1, ...], explainer_all, metrics_all, save_path+'figures_best_weight_x_true/rl_fid_bar_our.pdf',
+draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'figures_x_l1/rl_fid_bar.pdf',
                box_plot=False, log_scale=False)
-"""
