@@ -75,14 +75,14 @@ def rollout(agent_path, env, env_name, num_traj, agent_type=['zoo','zoo'], norm_
 
             actions = tuple(actions)
             observation, _, done, infos = env.step(actions)
+            if render: env.render()
+            
             reward = infos[exp_agent_id]['reward_remaining']
             if done: 
-               assert reward != 0
                epr = reward
                for id in range(2):
                    if agent_type[id] == 'zoo':
                       policy[id].reset()
-            if render: env.render()
             state = None
             if save_obs:
                state = env.render(mode='rgb_array')
@@ -137,8 +137,8 @@ def rollout(agent_path, env, env_name, num_traj, agent_type=['zoo','zoo'], norm_
             elif final_rewards == 1000:
                 final_rewards = 1
             else:
-                final_rewards = 0
-                print('None support final_rewards')
+                final_rewards = 2
+                #print('None support final_rewards')
             #print(final_rewards)
             if save_obs:
                 np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz',
