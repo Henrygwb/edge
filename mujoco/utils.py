@@ -8,41 +8,11 @@ from PIL import Image
 from abc import ABC, abstractmethod
 from stable_baselines.common.policies import MlpPolicy
 
-
-def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None, exp_agent_id=1,
+def rollout(agent_path, env, env_name, num_traj, agent_type=['zoo','zoo'], norm_path=None, exp_agent_id=1,
             max_ep_len=1e3, save_path=None, render=False, save_obs=False):
 
     # load agent-0 / agent-1 
-    tf_config = tf.ConfigProto(
-        inter_op_parallelism_threads=1,
-        intra_op_parallelism_threads=1)
-    sess = tf.Session(config=tf_config)
-    sess.__enter__()
-
-    policy = []
-    for i in range(2):
-        if agent_type[i] == 'zoo':
-           policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
-                                        ob_space=env.observation_space.spaces[i],
-                                        ac_space=env.action_space.spaces[i],
-                                        hiddens=[64, 64], normalize=True))
-        elif agent_type[i] == 'adv':
-           policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i],
-                          1, 1, 1, reuse=False))
-
-    sess.run(tf.variables_initializer(tf.global_variables()))
-    obs_rms = load_from_file(norm_path)
-    
-    for i in range(2):
-        if agent_type[i] == 'zoo':
-           param_path = agent_path + '/agent' + str(i + 1) + '_parameters-v1.pkl'
-           param = load_from_file(param_pkl_path=param_path)
-           setFromFlat(policy[i].get_variables(), param)
-        else:
-           param = load_from_model(agent_path + '/model.pkl')
-           adv_agent_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='model')
-           setFromFlat(adv_agent_variables, param)
-
+    policy = load_agent(env_name, agent_type, agent_path)
     max_ep_length = 0
     traj_count = 0
     for i in range(num_traj):
@@ -57,7 +27,6 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
             episode_length += 1
             actions = []
             values = []
-
             for id, obs in enumerate(observation):
                 if agent_type[id] == 'zoo':
                    act, value = policy[id].act(stochastic=False, observation=obs)
@@ -70,11 +39,15 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
 
             actions = tuple(actions)
             observation, _, done, infos = env.step(actions)
+            if render: env.render()
+            
             reward = infos[exp_agent_id]['reward_remaining']
             if done: 
-               assert reward != 0
                epr = reward
-            env.render()
+               for id in range(2):
+                   if agent_type[id] == 'zoo':
+                      policy[id].reset()
+            state = None
             if save_obs:
                state = env.render(mode='rgb_array')
             # save info
@@ -128,14 +101,14 @@ def rollout(agent_path, env, num_traj, agent_type=['zoo','zoo'], norm_path=None,
             elif final_rewards == 1000:
                 final_rewards = 1
             else:
-                final_rewards = 0
-                print('None support final_rewards')
+                final_rewards = 2
+                #print('None support final_rewards')
             #print(final_rewards)
             if save_obs:
-                np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz', 
+                np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz',
                                     actions=acts, values=values, states=states, rewards=rewards, final_rewards=final_rewards, observations=obs, seed=i)
             else:
-                np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz', 
+                np.savez_compressed(save_path + '_traj_' + str(traj_count) + '.npz',
                                     actions=acts, values=values, states=states, rewards=rewards, final_rewards=final_rewards, seed=i)
 
             traj_count += 1
@@ -151,32 +124,48 @@ def load_agent(env_name, agent_type, agent_path):
     sess = tf.Session(config=tf_config)
     sess.__enter__()
 
-    env = gym.make(env_name)
-
     policy = []
     for i in range(2):
         if agent_type[i] == 'zoo':
-            policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
-                                         ob_space=env.observation_space.spaces[i],
-                                         ac_space=env.action_space.spaces[i],
-                                         hiddens=[64, 64], normalize=True))
+           if env_name == 'multicomp/YouShallNotPassHumans-v0':
+               policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
+                                            ob_space=env.observation_space.spaces[i],
+                                            ac_space=env.action_space.spaces[i],
+                                            hiddens=[64, 64], normalize=True))
+           else:
+               policy.append(LSTMPolicy(scope="policy" + str(i), reuse=False,
+                                        ob_space=env.observation_space.spaces[i],
+                                        ac_space=env.action_space.spaces[i],
+                                        hiddens=[128, 128], normalize=True))
+
         elif agent_type[i] == 'adv':
-            policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i],
-                                    1, 1, 1, reuse=False))
+           policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i],
+                          1, 1, 1, reuse=False))
 
     sess.run(tf.variables_initializer(tf.global_variables()))
-
+            
     for i in range(2):
         if agent_type[i] == 'zoo':
-            param_path = agent_path + '/agent' + str(i + 1) + '_parameters-v1.pkl'
-            param = load_from_file(param_pkl_path=param_path)
-            setFromFlat(policy[i].get_variables(), param)
+           param_path = get_zoo_path(env_name, tag=i+1)
+           param = load_from_file(param_pkl_path=param_path)
+           setFromFlat(policy[i].get_variables(), param)
         else:
-            param = load_from_model(agent_path + '/model.pkl')
-            adv_agent_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='model')
-            setFromFlat(adv_agent_variables, param)
+           param = load_from_model(agent_path + '/model.pkl')
+           adv_agent_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='model')
+           setFromFlat(adv_agent_variables, param)
     return policy
 
+def get_zoo_path(env_name, **kwargs):
+    if env_name == 'multicomp/YouShallNotPassHumans-v0':
+        tag = kwargs.pop('tag', 1)
+        return './agent-zoo/you-shall-not-pass/agent%d_parameters-v1.pkl'%tag
+    elif env_name == 'multicomp/KickAndDefend-v0':
+        tag = kwargs.pop('tag', 1)
+        dir_name='kicker'
+        if tag is 2:
+            dir_name='defender'
+        version = kwargs.pop('version', 1)
+        return './agent-zoo/kick-and-defend/%s/agent%d_parameters-v%d.pkl'%(dir_name, tag, version)
 
 def rl_fed(env, seed, model, obs_rms, agent_type, original_traj, max_ep_len, importance,
            exp_agent_id=1, render=False, mask_act=False):
@@ -222,7 +211,10 @@ def rl_fed(env, seed, model, obs_rms, agent_type, original_traj, max_ep_len, imp
 
         if render: env.render()
         if done: 
-            assert reward != 0
+            # assert reward != 0
+            # reset the agent
+            for id in range(2):
+                if agent_type[id] == 'zoo': model[id].reset()
             epr = reward
             break
     print('step # {}, reward {:.0f}.'.format(episode_length, epr))
@@ -502,3 +494,188 @@ class MlpPolicyValue(Policy):
             return tf.get_default_session().run(self.value_flat, {self.obs_ph: obs})
         else:
             return self.sess.run(self.value_flat, {self.obs_ph: obs})
+
+class LSTMPolicy(Policy):
+    def __init__(self, scope, *, ob_space, ac_space, hiddens, rate=0.0, n_batch_train=1,
+                 n_envs=1, sess=None, reuse=False, normalize=False):
+        self.sess = sess
+        self.recurrent = True
+        self.normalized = normalize
+        self.n_envs = n_envs
+        with tf.variable_scope(scope, reuse=reuse):
+            self.scope = tf.get_variable_scope().name
+
+            assert isinstance(ob_space, gym.spaces.Box)
+
+            self.observation_ph = tf.placeholder(tf.float32, [None, None] + list(ob_space.shape), name="observation")
+            self.stochastic_ph = tf.placeholder(tf.bool, (), name="stochastic")
+            self.taken_action_ph = tf.placeholder(dtype=tf.float32, shape=[None, None, ac_space.shape[0]], name="taken_action")
+            self.dones_ph = tf.placeholder(dtype=tf.float32, shape=[None, 1], name="done_ph")
+
+            if self.normalized:
+                if self.normalized != 'ob':
+                    self.ret_rms = RunningMeanStd(scope="retfilter")
+                self.ob_rms = RunningMeanStd(shape=ob_space.shape, scope="obsfilter")
+
+            obz = self.observation_ph
+            if self.normalized:
+                obz = tf.clip_by_value((self.observation_ph - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
+
+            last_out = obz
+
+            for hidden in hiddens[:-1]:
+                last_out = tf.contrib.layers.fully_connected(last_out, hidden)
+
+            self.zero_state = []
+            self.state_in_ph = []
+            self.state_out = []
+            cell = tf.contrib.rnn.BasicLSTMCell(hiddens[-1], reuse=reuse)
+            size = cell.state_size
+            self.zero_state.append(np.zeros(size.c, dtype=np.float32))
+            self.zero_state.append(np.zeros(size.h, dtype=np.float32))
+            self.state_in_ph.append(tf.placeholder(tf.float32, [None, size.c], name="lstmv_c"))
+            self.state_in_ph.append(tf.placeholder(tf.float32, [None, size.h], name="lstmv_h"))
+            self.initial_state_1 = tf.contrib.rnn.LSTMStateTuple(self.state_in_ph[-2] * (1-self.dones_ph),
+                                                                 self.state_in_ph[-1]* (1-self.dones_ph))
+            last_out, state_out = tf.nn.dynamic_rnn(cell, last_out, initial_state=self.initial_state_1, scope="lstmv")
+            self.state_out.append(state_out)
+
+            self.vpredz = tf.contrib.layers.fully_connected(last_out, 1, activation_fn=None)[:, :, 0]
+            self.vpred = self.vpredz
+            if self.normalized and self.normalized != 'ob':
+                self.vpred = self.vpredz * self.ret_rms.std + self.ret_rms.mean  # raw = not standardized
+
+            last_out = obz
+            for hidden in hiddens[:-1]:
+                last_out = tf.contrib.layers.fully_connected(last_out, hidden)
+                self.policy_ff_acts = last_out
+                last_out = tf.nn.dropout(last_out, rate=rate)
+            cell = tf.contrib.rnn.BasicLSTMCell(hiddens[-1], reuse=reuse)
+            size = cell.state_size
+            self.zero_state.append(np.zeros(size.c, dtype=np.float32))
+            self.zero_state.append(np.zeros(size.h, dtype=np.float32))
+            self.state_in_ph.append(tf.placeholder(tf.float32, [None, size.c], name="lstmp_c"))
+            self.state_in_ph.append(tf.placeholder(tf.float32, [None, size.h], name="lstmp_h"))
+            self.initial_state_1 = tf.contrib.rnn.LSTMStateTuple(self.state_in_ph[-2] * (1-self.dones_ph),
+                                                                 self.state_in_ph[-1]* (1-self.dones_ph))
+            last_out, state_out = tf.nn.dynamic_rnn(cell, last_out, initial_state=self.initial_state_1, scope="lstmp")
+            self.state_out.append(state_out)
+            self.mean = tf.contrib.layers.fully_connected(last_out, ac_space.shape[0], activation_fn=None)
+            logstd = tf.get_variable(name="logstd", shape=[1, ac_space.shape[0]], initializer=tf.zeros_initializer())
+
+            # self.pd_mean = tf.reshape(self.mean
+            if reuse:
+                self.pd_mean = tf.reshape(self.mean, (n_batch_train, ac_space.shape[0]))
+            else:
+                self.pd_mean = tf.reshape(self.mean, (n_envs, ac_space.shape[0]))
+            self.pd = DiagonalGaussian(self.pd_mean, logstd)
+            self.proba_distribution = self.pd
+            self.sampled_action = switch(self.stochastic_ph, self.pd.sample(), self.pd.mode())
+            self.neglogp = self.proba_distribution.neglogp(self.sampled_action)
+            self.policy_proba = [self.proba_distribution.mean, self.proba_distribution.std]
+
+            self.zero_state = np.array(self.zero_state)
+            self.state_in_ph = tuple(self.state_in_ph)
+            self.state = self.zero_state
+            # add deterministic action
+            self.deterministic_action = self.pd.mode()
+
+            for p in self.get_trainable_variables():
+                tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.reduce_sum(tf.square(p)))
+
+    def make_feed_dict(self, observation, state_in, taken_action):
+        return {
+            self.observation_ph: observation,
+            self.state_in_ph: list(np.transpose(state_in, (1, 0, 2))),
+            self.taken_action_ph: taken_action
+        }
+
+    def act(self, observation, stochastic=True, extra_op=None):
+        outputs = [self.sampled_action, self.vpred, self.state_out]
+        # design for the pre_state
+        # notice the zero state
+        if extra_op == None:
+            a, v, s = tf.get_default_session().run(outputs, {
+                self.observation_ph: observation[None, None],
+                self.state_in_ph: list(self.state[:, None, :]),
+                self.stochastic_ph: stochastic,
+                self.dones_ph:np.zeros(self.state[0, None, 0].shape)[:,None]})
+        else:
+            outputs.append(self.policy_ff_acts)
+            a, v, s, ex = tf.get_default_session().run(outputs, {
+                self.observation_ph: observation[None, None],
+                self.state_in_ph: list(self.state[:, None, :]),
+                self.stochastic_ph: stochastic,
+                self.dones_ph:np.zeros(self.state[0, None, 0].shape)[:,None]})
+
+
+        self.state = []
+        for x in s:
+            self.state.append(x.c[0])
+            self.state.append(x.h[0])
+        self.state = np.array(self.state)
+
+        # finish checking.
+        if extra_op == None:
+            return a[0, ],  v[0, 0]
+        else:
+            return a[0, ], {'vpred': v[0, 0], 'state': self.state}, ex[0, 0, ]
+
+    def get_variables(self):
+        return tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.scope)
+
+    def get_trainable_variables(self):
+        return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
+
+    def reset(self):
+        self.state = self.zero_state
+
+    @property
+    def initial_state(self):
+        initial_state_shape = []
+        for i in range(4):
+            initial_state_shape.append(np.repeat(self.zero_state[i][None,], self.n_envs, axis=0))
+        self._initial_state = np.array(initial_state_shape)
+        return self._initial_state
+
+    def step(self, obs, state=None, mask=None, deterministic=False):
+        stochastic = not deterministic
+        if mask is not None:
+            mask = np.array(mask)[:, None]
+        if self.sess==None:
+            action, value, state, neglogp = tf.get_default_session().run([self.sampled_action, self.value_flat, self.state_out, self.neglogp],
+                                                                         {self.obs_ph: obs[:, None, :], self.state_in_ph: list(state), self.dones_ph: mask,
+                                                                          self.stochastic_ph: stochastic})
+        else:
+            action, value, state, neglogp = self.sess.run([self.sampled_action, self.value_flat, self.state_out, self.neglogp],
+                                                          {self.obs_ph: obs[:, None, :], self.state_in_ph: list(state), self.dones_ph: mask,
+                                                           self.stochastic_ph: stochastic})
+        value = value[:, 0]
+        state_np = []
+        for state_tmp in state:
+            for state_tmp_1 in state_tmp:
+                state_np.append(state_tmp_1)
+
+        return action, value, np.array(state_np), neglogp
+
+    def proba_step(self, obs, state=None, mask=None):
+        if mask is not None:
+            mask = np.array(mask)[:, None]
+        if self.sess==None:
+            return tf.get_default_session().run(self.policy_proba, {self.obs_ph: obs, self.state_in_ph: state,
+                                                                    self.dones_ph: mask})
+        else:
+            return self.sess.run(self.policy_proba, {self.obs_ph: obs[:, None, :], self.state_in_ph: list(state),
+                                                self.dones_ph: mask})
+
+    def value(self, obs, state=None, mask=None):
+        if mask is not None:
+            mask = np.array(mask)[:, None]
+        if self.sess==None:
+            return tf.get_default_session().run(self.value_flat, {self.obs_ph: obs[:, None, :],
+                                                                       self.state_in_ph: list(state),
+                                                                       self.dones_ph: mask})[:,0]
+        else:
+            return self.sess.run(self.value_flat, {self.obs_ph: obs[:, None, :],
+                                                        self.state_in_ph: list(state),
+                                                        self.dones_ph: mask})[:,0]
