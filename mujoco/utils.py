@@ -12,43 +12,7 @@ def rollout(agent_path, env, env_name, num_traj, agent_type=['zoo','zoo'], norm_
             max_ep_len=1e3, save_path=None, render=False, save_obs=False):
 
     # load agent-0 / agent-1 
-    tf_config = tf.ConfigProto(
-        inter_op_parallelism_threads=1,
-        intra_op_parallelism_threads=1)
-    sess = tf.Session(config=tf_config)
-    sess.__enter__()
-
-    policy = []
-    for i in range(2):
-        if agent_type[i] == 'zoo':
-           if env_name == 'multicomp/YouShallNotPassHumans-v0':
-               policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
-                                            ob_space=env.observation_space.spaces[i],
-                                            ac_space=env.action_space.spaces[i],
-                                            hiddens=[64, 64], normalize=True))
-           else:
-               policy.append(LSTMPolicy(scope="policy" + str(i), reuse=False,
-                                        ob_space=env.observation_space.spaces[i],
-                                        ac_space=env.action_space.spaces[i],
-                                        hiddens=[128, 128], normalize=True))
-
-        elif agent_type[i] == 'adv':
-           policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i],
-                          1, 1, 1, reuse=False))
-
-    sess.run(tf.variables_initializer(tf.global_variables()))
-    obs_rms = load_from_file(norm_path)
-    
-    for i in range(2):
-        if agent_type[i] == 'zoo':
-           param_path = get_zoo_path(env_name, tag=i+1)
-           param = load_from_file(param_pkl_path=param_path)
-           setFromFlat(policy[i].get_variables(), param)
-        else:
-           param = load_from_model(agent_path + '/model.pkl')
-           adv_agent_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='model')
-           setFromFlat(adv_agent_variables, param)
-
+    policy = load_agent(env_name, agent_type, agent_path)
     max_ep_length = 0
     traj_count = 0
     for i in range(num_traj):
@@ -160,32 +124,36 @@ def load_agent(env_name, agent_type, agent_path):
     sess = tf.Session(config=tf_config)
     sess.__enter__()
 
-    env = gym.make(env_name)
-
     policy = []
     for i in range(2):
         if agent_type[i] == 'zoo':
-            policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
-                                         ob_space=env.observation_space.spaces[i],
-                                         ac_space=env.action_space.spaces[i],
-                                         hiddens=[64, 64], normalize=True))
+           if env_name == 'multicomp/YouShallNotPassHumans-v0':
+               policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
+                                            ob_space=env.observation_space.spaces[i],
+                                            ac_space=env.action_space.spaces[i],
+                                            hiddens=[64, 64], normalize=True))
+           else:
+               policy.append(LSTMPolicy(scope="policy" + str(i), reuse=False,
+                                        ob_space=env.observation_space.spaces[i],
+                                        ac_space=env.action_space.spaces[i],
+                                        hiddens=[128, 128], normalize=True))
+
         elif agent_type[i] == 'adv':
-            policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i],
-                                    1, 1, 1, reuse=False))
+           policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i],
+                          1, 1, 1, reuse=False))
 
     sess.run(tf.variables_initializer(tf.global_variables()))
-
+            
     for i in range(2):
         if agent_type[i] == 'zoo':
-            param_path = agent_path + '/agent' + str(i + 1) + '_parameters-v1.pkl'
-            param = load_from_file(param_pkl_path=param_path)
-            setFromFlat(policy[i].get_variables(), param)
+           param_path = get_zoo_path(env_name, tag=i+1)
+           param = load_from_file(param_pkl_path=param_path)
+           setFromFlat(policy[i].get_variables(), param)
         else:
-            param = load_from_model(agent_path + '/model.pkl')
-            adv_agent_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='model')
-            setFromFlat(adv_agent_variables, param)
+           param = load_from_model(agent_path + '/model.pkl')
+           adv_agent_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='model')
+           setFromFlat(adv_agent_variables, param)
     return policy
-
 
 def get_zoo_path(env_name, **kwargs):
     if env_name == 'multicomp/YouShallNotPassHumans-v0':
@@ -243,7 +211,10 @@ def rl_fed(env, seed, model, obs_rms, agent_type, original_traj, max_ep_len, imp
 
         if render: env.render()
         if done: 
-            assert reward != 0
+            # assert reward != 0
+            # reset the agent
+            for id in range(2):
+                if agent_type[id] == 'zoo': model[id].reset()
             epr = reward
             break
     print('step # {}, reward {:.0f}.'.format(episode_length, epr))
