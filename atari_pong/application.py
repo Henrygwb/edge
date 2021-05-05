@@ -9,12 +9,12 @@ from atari_pong.utils import rl_fed, NNPolicy, prepro
 
 
 def run_patch(budget, num_trajs):
-    exps_all = [sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal, dgp_1_sal]
-    diff_all = np.zeros((6, 209))
-    for k in range(6):
+    exps_all = [sal_value, rudder_sal, saliency_sal, dgp_1_sal]
+    diff_all = np.zeros((4, 209))
+    for k in range(4):
         print(k)
         importance = exps_all[k]
-        if k == 5:
+        if k == 3:
             correct_trajs_all = []
         num_loss = 0
         for i in range(num_trajs):
@@ -27,21 +27,21 @@ def run_patch(budget, num_trajs):
                 importance_traj = np.arange(max_ep_len)
                 np.random.shuffle(importance_traj)
                 importance_traj = importance_traj[0:10]
-            elif k == 5:
+            elif k == 3:
                 importance_traj = [180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193]
             else:
                 importance_traj = np.argsort(importance[i,])[::-1][0:10]
             j = 0
-            if k == 5:
+            if k == 3:
                 correct_trajs = []
             for _ in range(budget):
                 replay_reward_10, traj = run_patch_traj(env_name=env_name, seed=seed, model=model,
                                                         original_traj=original_traj, max_ep_len=max_ep_len,
                                                         importance=importance_traj, render=False)
                 j += replay_reward_10
-                if k == 5 and replay_reward_10 != -1:
+                if k == 3 and replay_reward_10 != -1:
                     correct_trajs.append(traj)
-            if k == 5:
+            if k == 3:
                 correct_trajs_all.append(correct_trajs)
             diff_all[k, num_loss] = j
             num_loss += 1
@@ -286,13 +286,11 @@ model = NNPolicy(channels=1, num_actions=env.action_space.n)
 _ = model.try_load(agent_path, checkpoint='*.tar')
 torch.manual_seed(1)
 
-budget = 10
-diff_10, trajs_10 = run_patch(budget, 30)
+# budget = 10
+# diff_10, trajs_10 = run_patch(budget, 1000)
+# np.savez(save_path+'patch_results_10.npz', diff_10=diff_10, trajs_10=trajs_10)
 budget = 30
-diff_30, trajs_30 = run_patch(budget, 30)
-budget = 50
-diff_50, trajs_50 = run_patch(budget, 30)
-np.savez(save_path+'patch_results.npz', diff_10=diff_10, diff_30=diff_30, diff_50=diff_50,
-         trajs_10=trajs_10, trajs_30=trajs_30, trajs_50=trajs_50)
+diff_30, trajs_30 = run_patch(budget, 1880)
+np.savez(save_path+'patch_results_30.npz', diff_30=diff_30, trajs_30=trajs_30)
 
 # Patch policy.
