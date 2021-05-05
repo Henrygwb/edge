@@ -1,6 +1,8 @@
 import os, sys
 import torch, gym
 import numpy as np
+from torch import nn
+import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
 from matplotlib import pyplot as plt
@@ -244,9 +246,9 @@ dgp_2_sal = dgp_2_fid_results['sal']
 # diff_all_10 = np.zeros((7, 1671))
 # diff_all_30 = np.zeros((7, 1671))
 # diff_all_50 = np.zeros((7, 1671))
-# total_traj_num = 0
 # for k in range(7):
 #     print(k)
+#     total_traj_num = 0
 #     importance = exps_all[k]
 #     for i in range(1880):
 #         if k == 2:
@@ -294,3 +296,12 @@ diff_30, trajs_30 = run_patch(budget, 1880)
 np.savez(save_path+'patch_results_30.npz', diff_30=diff_30, trajs_30=trajs_30)
 
 # Patch policy.
+
+# optimizer = optim.Adam([{'params': model.parameters(), 'weight_decay': 1e-4}], lr=0.01)
+# loss_fn = nn.CrossEntropyLoss()
+# if torch.cuda.is_available():
+#     model = model.cuda()
+# value, logit, _ = model((Variable(state.view(1, 1, 80, 80)), (hx, cx)))
+# loss = loss_fn(logit, actions)
+# loss.backward()
+# optimizer.step()
