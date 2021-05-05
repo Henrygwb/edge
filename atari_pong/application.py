@@ -30,7 +30,7 @@ def run_patch(budget, num_trajs):
                 np.random.shuffle(importance_traj)
                 importance_traj = importance_traj[0:10]
             elif k == 3:
-                importance_traj = [180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193]
+                importance_traj = [184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194]
             else:
                 importance_traj = np.argsort(importance[i,])[::-1][0:10]
             j = 0
@@ -68,23 +68,22 @@ def run_patch_traj(env_name, seed, model, original_traj, importance, max_ep_len=
     state_all = []
     action_all = []
     hidden_all = []
-    for i in range(traj_len):
+    for i in range(traj_len+20):
+        if epr != 0:
+            break
         # Steps before the important steps reproduce original traj.
-        action = acts_orin[start_step+i] - 1
         if start_step+i in importance:
             hidden_all.append((hx, cx))
             state_all.append(state)
         value, logit, (hx, cx) = model((Variable(state.view(1, 1, 80, 80)), (hx, cx)))
         hx, cx = Variable(hx.data), Variable(cx.data)
         prob = F.softmax(logit, dim=-1)
-        action_model = prob.max(1)[1].data.numpy()[0]
+        action = prob.max(1)[1].data.numpy()[0]
         # Important steps take suboptimal actions.
         if start_step + i in importance:
-            act_set_1 = act_set[act_set!=action_model]
+            act_set_1 = act_set[act_set!=action]
             action = np.random.choice(act_set_1)
         # Steps after the important steps take optimal actions.
-        if start_step+1 > importance[-1]:
-            action = action_model
         obs, reward, done, expert_policy = env.step(action)
         state = torch.tensor(prepro(obs))
         if render: env.render()
@@ -270,9 +269,9 @@ dgp_2_sal = dgp_2_fid_results['sal']
 #         replay_reward_50 = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
 #                                   max_ep_len=max_ep_len, importance=importance_traj[0:50,], render=False, mask_act=True)
 #
-#         diff_all_10[k, total_traj_num] = np.abs(orin_reward-replay_reward_10)
-#         diff_all_30[k, total_traj_num] = np.abs(orin_reward-replay_reward_30)
-#         diff_all_50[k, total_traj_num] = np.abs(orin_reward-replay_reward_50)
+#         diff_all_10[k, total_traj_num] = orin_reward-replay_reward_10
+#         diff_all_30[k, total_traj_num] = orin_reward-replay_reward_30
+#         diff_all_50[k, total_traj_num] = orin_reward-replay_reward_50
 #         total_traj_num += 1
 #
 # np.savez(save_path+'att_results.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_all_50)
@@ -292,7 +291,7 @@ torch.manual_seed(1)
 # diff_10, trajs_10 = run_patch(budget, 1000)
 # np.savez(save_path+'patch_results_10.npz', diff_10=diff_10, trajs_10=trajs_10)
 budget = 30
-diff_30, trajs_30 = run_patch(budget, 1880)
+diff_30, trajs_30 = run_patch(budget, 30)
 np.savez(save_path+'patch_results_30.npz', diff_30=diff_30, trajs_30=trajs_30)
 
 # Patch policy.
