@@ -28,6 +28,7 @@ def run_patch(budget, num_trajs):
             seed = int(original_traj['seed'])
             if orin_reward == 1:
                 continue
+            print(num_loss)
             if k == 2:
                 importance_traj = np.arange(max_ep_len)
                 np.random.shuffle(importance_traj)
@@ -209,27 +210,38 @@ rat_sal = rat_fid_results['sal']
 # Explainer 6 - DGP.
 dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_False_0.1_10_8_True_exp.npz')
 dgp_1_sal = dgp_1_fid_results['sal']
-# full_covar = dgp_1_fid_results['full_covar']
-# traj_covar = dgp_1_fid_results['traj_cova']
-# step_covar = dgp_1_fid_results['step_covar']
-# VisualizeCovar(full_covar[0], save_path+'dgp_1_full_covar.pdf')
-# VisualizeCovar(traj_covar[0], save_path+'dgp_1_traj_covar.pdf')
-# VisualizeCovar(step_covar[0], save_path+'dgp_1_step_covar.pdf')
-# del full_covar
-# del traj_covar
-# del step_covar
+traj_covar = dgp_1_fid_results['traj_cova']
+step_covar = dgp_1_fid_results['step_covar']
+
+#for i in range(40):
+#    print(i)
+#    VisualizeCovar(step_covar[0, i*200:(i+1)*200, i*200:(i+1)*200], save_path+'dgp_1_step_covar_'+str(i)+'.pdf')
+traj_covar_small = np.zeros((40, 40))
+for i in range(40):
+    for j in range(40):
+        print(i)
+        print(j)
+        assert traj_covar[0, i*200, j*200] == traj_covar[0, i*200+10, j*200+10]
+        traj_covar_small[i, j] = traj_covar[0, i*200, j*200]
+VisualizeCovar(traj_covar_small, save_path+'dgp_1_traj_covar.pdf')
+del traj_covar
+del step_covar
 
 dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_exp.npz')
 dgp_2_sal = dgp_2_fid_results['sal']
-# full_covar = dgp_2_fid_results['full_covar']
-# traj_covar = dgp_2_fid_results['traj_cova']
-# step_covar = dgp_2_fid_results['step_covar']
-# VisualizeCovar(full_covar[0], save_path+'dgp_2_full_covar.pdf')
-# VisualizeCovar(traj_covar[0], save_path+'dgp_2_traj_covar.pdf')
-# VisualizeCovar(step_covar[0], save_path+'dgp_2_step_covar.pdf')
-# del full_covar
-# del traj_covar
-# del step_covar
+traj_covar = dgp_2_fid_results['traj_cova']
+step_covar = dgp_2_fid_results['step_covar']
+
+for i in range(40):
+    VisualizeCovar(step_covar[0, i*200:(i+1)*200, i*200:(i+1)*200], save_path+'dgp_2_step_covar_'+str(i)+'.pdf')
+traj_covar_small = np.zeros((40, 40))
+for i in range(40):
+    for j in range(40):
+        assert traj_covar[0, i*200, j*200] == traj_covar[0, i*200+10, j*200+10]
+        traj_covar_small[i, j] = traj_covar[0, i*200, j*200]
+VisualizeCovar(traj_covar_small, save_path+'dgp_2_traj_covar.pdf')
+del traj_covar
+del step_covar
 
 # Traj important time steps visualization.
 # Winning trajs.
@@ -289,25 +301,22 @@ dgp_2_sal = dgp_2_fid_results['sal']
 # np.savez(save_path+'att_results.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_all_50)
 
 # Patch individual trajs.
-env_name = 'Pong-v0'
-max_ep_len = 200
-agent_path = 'agents/{}/'.format(env_name.lower())
-num_trajs = 30
+# env_name = 'Pong-v0'
+# max_ep_len = 200
+# agent_path = 'agents/{}/'.format(env_name.lower())
+# num_trajs = 30
 
-env = gym.make(env_name)
-model = NNPolicy(channels=1, num_actions=env.action_space.n)
-_ = model.try_load(agent_path, checkpoint='*.tar')
-torch.manual_seed(1)
+# env = gym.make(env_name)
+# model = NNPolicy(channels=1, num_actions=env.action_space.n)
+# _ = model.try_load(agent_path, checkpoint='*.tar')
+# torch.manual_seed(1)
 
-# budget = 10
-# diff_10, trajs_10 = run_patch(budget, 1000)
-# np.savez(save_path+'patch_results_10.npz', diff_10=diff_10, trajs_10=trajs_10)
-budget = 15
-tie_30, win_30, loss_30, trajs_30 = run_patch(budget, 1880)
-print(tie_30)
-print(win_30)
-print(loss_30)
-np.savez(save_path+'patch_results_30.npz', tie_30=tie_30, win_30=win_30, trajs_30=trajs_30)
+# budget = 15
+# tie_30, win_30, loss_30, trajs_30 = run_patch(budget, 1880)
+# print(tie_30)
+# print(win_30)
+# print(loss_30)
+# np.savez(save_path+'patch_results_30.npz', tie_30=tie_30, win_30=win_30, trajs_30=trajs_30)
 
 # Patch policy.
 

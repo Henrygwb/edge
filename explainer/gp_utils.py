@@ -1021,4 +1021,5 @@ def VisualizeCovar(covariance, save_path):
     if save_path[-3:] != 'pdf':
         raise TypeError('Output format should be pdf.')
     plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
     return 0
