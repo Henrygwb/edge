@@ -1,4 +1,5 @@
 import os, sys
+sys.path.append('..')
 import torch, gym
 import numpy as np
 from torch import nn
@@ -12,7 +13,9 @@ from atari_pong.utils import rl_fed, NNPolicy, prepro
 
 def run_patch(budget, num_trajs):
     exps_all = [sal_value, rudder_sal, saliency_sal, dgp_1_sal]
-    diff_all = np.zeros((4, 209))
+    loss_all = np.zeros((4, 209))
+    tie_all = np.zeros((4, 209))
+    win_all = np.zeros((4, 209))
     for k in range(4):
         print(k)
         importance = exps_all[k]
@@ -28,30 +31,39 @@ def run_patch(budget, num_trajs):
             if k == 2:
                 importance_traj = np.arange(max_ep_len)
                 np.random.shuffle(importance_traj)
-                importance_traj = importance_traj[0:10]
+                importance_traj = importance_traj[0:3]
             elif k == 3:
-                importance_traj = [184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194]
+                importance_traj = [184, 185, 186]
             else:
-                importance_traj = np.argsort(importance[i,])[::-1][0:10]
+                importance_traj = np.argsort(importance[i,])[::-1][0:3]
             j = 0
+            j_1 = 0
+            j_2 = 0
             if k == 3:
                 correct_trajs = []
             for _ in range(budget):
                 replay_reward_10, traj = run_patch_traj(env_name=env_name, seed=seed, model=model,
                                                         original_traj=original_traj, max_ep_len=max_ep_len,
                                                         importance=importance_traj, render=False)
-                j += replay_reward_10
-                if k == 3 and replay_reward_10 != -1:
+                if replay_reward_10 == -1:
+                    j_2 += 1
+                if replay_reward_10 == 0:
+                    j += 1
+                if replay_reward_10 == 1:
+                    j_1 += 1
+                if k == 3 and replay_reward_10 == 1:
                     correct_trajs.append(traj)
             if k == 3:
                 correct_trajs_all.append(correct_trajs)
-            diff_all[k, num_loss] = j
+            tie_all[k, num_loss] = j
+            win_all[k, num_loss] = j_1
+            loss_all[k, num_loss] = j_2
             num_loss += 1
-    return diff_all, correct_trajs_all
+    return tie_all, win_all, loss_all, correct_trajs_all
 
 
 def run_patch_traj(env_name, seed, model, original_traj, importance, max_ep_len=200, render=False):
-
+    importance = np.sort(importance)
     acts_orin = original_traj['actions']
     traj_len = np.count_nonzero(acts_orin)
     start_step = max_ep_len - traj_len
@@ -68,11 +80,11 @@ def run_patch_traj(env_name, seed, model, original_traj, importance, max_ep_len=
     state_all = []
     action_all = []
     hidden_all = []
-    for i in range(traj_len+20):
+    for i in range(traj_len + 100):
         if epr != 0:
             break
         # Steps before the important steps reproduce original traj.
-        if start_step+i in importance:
+        if start_step+i > importance[0]:
             hidden_all.append((hx, cx))
             state_all.append(state)
         value, logit, (hx, cx) = model((Variable(state.view(1, 1, 80, 80)), (hx, cx)))
@@ -88,7 +100,7 @@ def run_patch_traj(env_name, seed, model, original_traj, importance, max_ep_len=
         state = torch.tensor(prepro(obs))
         if render: env.render()
         epr += reward
-        if start_step + i in importance:
+        if start_step + i > importance[0]:
             action_all.append(action)
         # save info!
         episode_length += 1
@@ -290,9 +302,12 @@ torch.manual_seed(1)
 # budget = 10
 # diff_10, trajs_10 = run_patch(budget, 1000)
 # np.savez(save_path+'patch_results_10.npz', diff_10=diff_10, trajs_10=trajs_10)
-budget = 30
-diff_30, trajs_30 = run_patch(budget, 30)
-np.savez(save_path+'patch_results_30.npz', diff_30=diff_30, trajs_30=trajs_30)
+budget = 15
+tie_30, win_30, loss_30, trajs_30 = run_patch(budget, 1880)
+print(tie_30)
+print(win_30)
+print(loss_30)
+np.savez(save_path+'patch_results_30.npz', tie_30=tie_30, win_30=win_30, trajs_30=trajs_30)
 
 # Patch policy.
 
