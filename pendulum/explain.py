@@ -19,7 +19,7 @@ parser.add_argument("--model_dir", type=str, required=True, help='pretrained mod
 parser.add_argument("--model_save_dir", type=str, required=True, help='dir to save explanation models')
 parser.add_argument("--n_action", type=int, required=True, help='Cardinality of action space, 0 for continuous')
 parser.add_argument("--epochs", type=int, required=True, help='num epochs')
-parser.add_argument("--eps", type=int, required=False, default=0.05, help='fid eps')
+parser.add_argument("--eps", type=float, required=False, default=0.05, help='fid eps')
 
 args = parser.parse_args()
 
