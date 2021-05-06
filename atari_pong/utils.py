@@ -171,5 +171,5 @@ def rl_fed(env_name, seed, model, original_traj, importance, max_ep_len=1e3, ren
         # save info!
         episode_length += 1
 
-    print('step # {}, reward {:.0f}.'.format(episode_length, epr))
+    # print('step # {}, reward {:.0f}.'.format(episode_length, epr))
     return epr
