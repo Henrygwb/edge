@@ -192,7 +192,7 @@ def rl_fed(env, seed, model, obs_rms, agent_type, original_traj, max_ep_len, imp
     episode_length, epr, done = 0, 0, False  # bookkeeping
     observation = env.reset()
 
-    for i in range(traj_len):
+    for i in range(traj_len+200):
         actions = []
         for id, obs in enumerate(observation):
             if agent_type[id] == 'zoo':
@@ -201,12 +201,17 @@ def rl_fed(env, seed, model, obs_rms, agent_type, original_traj, max_ep_len, imp
                     act, _ = model[id].act(stochastic=False, observation=obs)
                 else:
                     # victim agent we need to explain
-                    action = acts_orin[start_step+i]
+                    # action = acts_orin[start_step+i]
                     act, _ = model[id].act(stochastic=False, observation=obs)
                     if mask_act:
                         if start_step + i in importance:
+                            # print(start_step + i)
                             # add noise into the action
-                            act = act + np.random.rand(act.shape[0]) * 2 - 1
+                            # print(np.min(act))
+                            # print(np.max(act))
+                            act = act + np.random.rand(act.shape[0]) * 3 - 1
+                            # print(np.min(act))
+                            # print(np.max(act))
 #                            act = np.clip(act, env.action_space.spaces[exp_agent_id].low,
 #                                        env.action_space.spaces[exp_agent_id].high)
             else:
@@ -224,7 +229,7 @@ def rl_fed(env, seed, model, obs_rms, agent_type, original_traj, max_ep_len, imp
         if done: 
             assert reward != 0
             epr = reward
-            break
+            break 
     print('step # {}, reward {:.0f}.'.format(episode_length, epr))
     return epr
 

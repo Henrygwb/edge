@@ -1,7 +1,7 @@
 import os, sys
 # sys.path.append('..')
 import gym
-# import gym_compete
+import gym_compete
 import numpy as np
 from matplotlib import pyplot as plt
 # from explainer.gp_utils import VisualizeCovar
@@ -157,7 +157,7 @@ dgp_2_sal = dgp_2_fid_results['sal']
 # del step_covar_2
 
 # Launch attack at the most importance time steps: Top 10/30/50.
-exps_all = [dgp_1_sal, dgp_2_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
+exps_all = [dgp_2_sal, dgp_1_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal, None]
 diff_all_10 = np.zeros((8, 1006))
 diff_all_30 = np.zeros((8, 1006))
 diff_all_50 = np.zeros((8, 1006))
@@ -166,7 +166,8 @@ for k in range(8):
     total_traj_num = 0
     importance = exps_all[k]
     for i in range(2000):
-        if k == 8:
+        if i % 500 == 0: print(i)
+        if k == 7:
             importance_traj = np.arange(max_ep_len)
             np.random.shuffle(importance_traj)
         else:
@@ -177,26 +178,25 @@ for k in range(8):
             continue
         orin_reward = 1000
         seed = int(original_traj['seeds'])
-        print('============')
-        print(seed)
+
         replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:10,],
-                                  render=False, mask_act=False)
-        print(replay_reward_10)
+                                  render=False, mask_act=True)
+     
         replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:30,],
-                                  render=False, mask_act=False)
-        print(replay_reward_30)
+                                  render=False, mask_act=True)
+    
         replay_reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:50,],
-                                  render=False, mask_act=False)
-        print(replay_reward_50)
+                                  render=False, mask_act=True)
+   
 
         diff_all_10[k, total_traj_num] = orin_reward-replay_reward_10
         diff_all_30[k, total_traj_num] = orin_reward-replay_reward_30
         diff_all_50[k, total_traj_num] = orin_reward-replay_reward_50
         total_traj_num += 1
-
+    print(total_traj_num)
 np.savez(save_path+'att_results.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_all_50)
 att_results = np.load(save_path+'att_results.npz')
 diff_10 = att_results['diff_10']
@@ -205,7 +205,7 @@ diff_50 = att_results['diff_50']
 total_trajs_num = float(diff_10.shape[1])
 for k in range(8):
     print('======================')
-    print(str(k))
+    print(k)
     win = np.where(diff_10[k, ] == 0)[0].shape[0]
     tie = np.where(diff_10[k, ] == 1000)[0].shape[0]
     print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
