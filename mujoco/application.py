@@ -1,11 +1,28 @@
 import os, sys
-sys.path.append('..')
+#sys.path.append('..')
 import gym
 import gym_compete
 import numpy as np
+import seaborn as sns
 from matplotlib import pyplot as plt
-from explainer.gp_utils import VisualizeCovar
-from mujoco.utils import rl_fed, load_agent, load_from_file
+from utils import rl_fed, load_agent, load_from_file
+
+
+def VisualizeCovar(covariance, save_path):
+    plt.figure()
+    heat = sns.heatmap(
+        covariance,
+        cmap="YlGnBu",
+        square=True,
+        robust=True,
+        xticklabels=False,
+        yticklabels=False,
+    )
+    if save_path[-3:] != 'pdf':
+        raise TypeError('Output format should be pdf.')
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
+    return 0
 
 
 def run_patch(budget, model, obs_rms, max_ep_len, num_trajs, num_step):
@@ -211,13 +228,13 @@ rat_sal = rat_fid_results['sal']
 # Explainer 6 - DGP.
 dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_0.01_10_16_True_exp.npz')
 dgp_1_sal = dgp_1_fid_results['sal']
-traj_covar = dgp_1_fid_results['traj_cova']
-step_covar = dgp_1_fid_results['step_covar']
+#traj_covar_1 = dgp_1_fid_results['traj_cova']
+#step_covar_1 = dgp_1_fid_results['step_covar']
 
 dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
 dgp_2_sal = dgp_2_fid_results['sal']
-traj_covar = dgp_2_fid_results['traj_cova']
-step_covar = dgp_2_fid_results['step_covar']
+#traj_covar_2 = dgp_2_fid_results['traj_cova']
+#step_covar_2 = dgp_2_fid_results['step_covar']
 
 # Traj important time steps visualization.
 # Winning trajs.
@@ -231,26 +248,28 @@ step_covar = dgp_2_fid_results['step_covar']
 # demonstrate_trajs(1877)
 
 # Traj/Time step correlation visualization.
+"""
 for i in range(40):
-   VisualizeCovar(step_covar[0, i*200:(i+1)*200, i*200:(i+1)*200], save_path+'dgp_1_step_covar_'+str(i)+'.pdf')
+   VisualizeCovar(step_covar_1[0, i*200:(i+1)*200, i*200:(i+1)*200], save_path+'dgp_1_step_covar_'+str(i)+'.pdf')
 traj_covar_small = np.zeros((40, 40))
 for i in range(40):
     for j in range(40):
-        traj_covar_small[i, j] = traj_covar[0, i*200, j*200]
+        traj_covar_small[i, j] = traj_covar_1[0, i*200, j*200]
 VisualizeCovar(traj_covar_small, save_path+'dgp_1_traj_covar.pdf')
-del traj_covar
-del step_covar
+del traj_covar_1
+del step_covar_1
 
 for i in range(40):
-   VisualizeCovar(step_covar[0, i*200:(i+1)*200, i*200:(i+1)*200], save_path+'dgp_2_step_covar_'+str(i)+'.pdf')
+   VisualizeCovar(step_covar_2[0, i*200:(i+1)*200, i*200:(i+1)*200], save_path+'dgp_2_step_covar_'+str(i)+'.pdf')
 traj_covar_small = np.zeros((40, 40))
 for i in range(40):
     for j in range(40):
-        traj_covar_small[i, j] = traj_covar[0, i*200, j*200]
+        traj_covar_small[i, j] = traj_covar_2[0, i*200, j*200]
 VisualizeCovar(traj_covar_small, save_path+'dgp_2_traj_covar.pdf')
-del traj_covar
-del step_covar
 
+del traj_covar_2
+del step_covar_2
+"""
 # Launch attack at the most importance time steps: Top 10/30/50.
 exps_all = [sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal, dgp_1_sal, dgp_2_sal]
 diff_all_10 = np.zeros((8, 1006))
@@ -271,7 +290,7 @@ for k in range(8):
         if orin_reward == 0:
             continue
         orin_reward = 1000
-        seed = int(original_traj['seed'])
+        seed = int(original_traj['seeds'])
         replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:10,],
                                   render=False, mask_act=False)
