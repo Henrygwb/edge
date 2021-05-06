@@ -19,6 +19,7 @@ parser.add_argument("--model_dir", type=str, required=True, help='pretrained mod
 parser.add_argument("--model_save_dir", type=str, required=True, help='dir to save explanation models')
 parser.add_argument("--n_action", type=int, required=True, help='Cardinality of action space, 0 for continuous')
 parser.add_argument("--epochs", type=int, required=True, help='num epochs')
+parser.add_argument("--eps", type=float, required=False, default=0.05, help='fid eps')
 
 args = parser.parse_args()
 
@@ -74,15 +75,16 @@ elif args.explainer == 'rudder':
     rudder_explainer = Rudder(seq_len=seq_len, len_diff=len_diff, input_dim=input_dim, hiddens=hiddens,
                               n_action=n_action, embed_dim=embed_dim, encoder_type=encoder_type)
     name = 'rudder_' + encoder_type + '_' + rnn_cell_type + '_' + str(embed_dim)
-    # rudder_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path,
-    #                        save_path=save_path + name + '_model')
-    # rudder_explainer.test(test_idx, batch_size, traj_path)
+    rudder_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path,
+                           save_path=save_path + name + '_model')
+    rudder_explainer.test(test_idx, batch_size, traj_path)
     rudder_explainer.load(save_path + name + '_model.data')
     rudder_explainer.test(test_idx, batch_size, traj_path)
     sal_rudder_all, fid_all, stab_all, abs_all, mean_time = rudder_explainer.exp_fid_stab(exp_idx, batch_size,
                                                                                           traj_path,
                                                                                           likelihood_type,
-                                                                                          n_stab_samples)
+                                                                                          n_stab_samples,
+                                                                                          eps=args.eps)
     print('=============================================')
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
     print('Std fid of the zero-one normalization: {}'.format(np.std(fid_all[0])))
@@ -138,7 +140,8 @@ elif args.explainer == 'saliency':
     for back2rnn in [True, False]:
         for saliency_methond in all_methods:
             sal_saliency_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = saliency_explainer.exp_fid_stab(
-                exp_idx, batch_size, traj_path, back2rnn, saliency_methond, n_samples=15, n_stab_samples=n_stab_samples)
+                exp_idx, batch_size, traj_path, back2rnn, saliency_methond, n_samples=15, n_stab_samples=n_stab_samples,
+                                                                                          eps=args.eps)
             fid_all_methods.append(np.mean(fid_all))
             if back2rnn:
                 np.savez_compressed(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz',
@@ -222,7 +225,7 @@ elif args.explainer == 'attention':
     attention_explainer.test(test_idx, batch_size, traj_path)
 
     sal_attention_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = attention_explainer.exp_fid_stab(
-        exp_idx, batch_size, traj_path, n_stab_samples)
+        exp_idx, batch_size, traj_path, n_stab_samples, eps=args.eps)
 
     print('=============================================')
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
@@ -278,7 +281,7 @@ elif args.explainer == 'rationale':
     rationale_explainer.test(test_idx, batch_size, traj_path)
 
     sal_rationale_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = rationale_explainer.exp_fid_stab(
-        exp_idx, batch_size, traj_path, n_stab_samples)
+        exp_idx, batch_size, traj_path, n_stab_samples, eps=args.eps)
 
     print('=============================================')
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
@@ -359,7 +362,7 @@ elif args.explainer == 'dgp':
     dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
 
     sal_rationale_all, covar_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = dgp_explainer.exp_fid_stab(
-        exp_idx, batch_size, traj_path, logit=logit, n_stab_samples=n_stab_samples)
+        exp_idx, batch_size, traj_path, logit=logit, n_stab_samples=n_stab_samples, eps=args.eps)
 
     print('=============================================')
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
