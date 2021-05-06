@@ -119,6 +119,7 @@ def run_patch_traj(env_name, seed, model, obs_dict, act_dict, p, max_ep_len=200,
     env.env.frameskip = 3
     in_dict = False
 
+    act_idx = np.random.binomial(1, p)
     episode_length, epr, done = 0, 0, False  # bookkeeping
     obs_0 = env.reset()  # get first state
     state = torch.tensor(prepro(obs_0))
@@ -136,8 +137,8 @@ def run_patch_traj(env_name, seed, model, obs_dict, act_dict, p, max_ep_len=200,
             in_dict = True
             if mix_policy:
                 idx = np.argmin(state_diff)
-                actions = [act_dict[idx], action]
-                act_idx = np.random.binomial(1, p)
+                actions = [action, act_dict[idx]]
+                # act_idx = np.random.binomial(1, p)
                 action = actions[act_idx]
         obs, reward, done, expert_policy = env.step(action)
         state = torch.tensor(prepro(obs))
@@ -448,13 +449,13 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, f
 
 budget = 10
 num_patch_traj = 1880
-num_test_traj = 200
+num_test_traj = 500
 
 exp_methods = ['dgp', 'value', 'rudder', 'attention', 'rationale', 'saliency']
 sals = [dgp_1_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
 
-for k in range(0, 6):
-    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, free_test=True, collect_dict=False)
+for k in range(6):
+    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, free_test=True, collect_dict=True)
 
 
 
