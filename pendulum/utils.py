@@ -9,7 +9,6 @@ from urllib.error import HTTPError
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 import gym
-import yaml
 
 BASE_MODEL_URL = 'https://github.com/DLR-RM/rl-trained-agents/raw/d81fcd61cef4599564c859297ea68bacf677db6b/ppo'
 
@@ -18,7 +17,8 @@ def get_args():
 
     parser.add_argument('--log_dir', type=str, required=True, help='Log directory path')
     parser.add_argument('--model_dir', type=str, required=False, help='Model directory path')
-    # parser.add_argument('--init_seed', type=int, required=False, default=0, help='Random seed')
+    parser.add_argument('--init_seed', type=int, required=False, default=0, help='Random seed')
+    parser.add_argument('--training_dir', type=str, required=False, default=None, help='When creating test data, this is the train data to normalize against')
 
     parser.add_argument('--game', type=str, required=True, help='Game to run')
     parser.add_argument('--episodes', type=int, required=False, default=2, help='Number of episodes')
