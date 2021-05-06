@@ -111,11 +111,13 @@ def run_exploration_traj(env_name, seed, model, original_traj, importance, max_e
     return epr, (state_all, action_all)
 
 
-def run_patch_traj(env_name, seed, model, obs_dict, act_dict, max_ep_len=200, eps=1e-4, render=False, mix_policy=True):
+def run_patch_traj(env_name, seed, model, obs_dict, act_dict, p, max_ep_len=200, eps=1e-4,
+                   render=False, mix_policy=True):
 
     env = gym.make(env_name)
     env.seed(seed)
     env.env.frameskip = 3
+    in_dict = False
 
     episode_length, epr, done = 0, 0, False  # bookkeeping
     obs_0 = env.reset()  # get first state
@@ -128,13 +130,15 @@ def run_patch_traj(env_name, seed, model, obs_dict, act_dict, max_ep_len=200, ep
         hx, cx = Variable(hx.data), Variable(cx.data)
         prob = F.softmax(logit, dim=-1)
         action = prob.max(1)[1].data.numpy()[0]
-        if mix_policy:
-            # check the lookup table and take the corresponding action if state is similar.
-            state_diff = np.sum(np.abs(obs_dict - state.numpy()), (1, 2, 3))
-            if np.min(state_diff) < eps and i > 60:
-                # print(i)
+        # check the lookup table and take the corresponding action if state is similar.
+        state_diff = np.sum(np.abs(obs_dict - state.numpy()), (1, 2, 3))
+        if np.min(state_diff) < eps:
+            in_dict = True
+            if mix_policy:
                 idx = np.argmin(state_diff)
-                action = act_dict[idx]
+                actions = [act_dict[idx], action]
+                act_idx = np.random.binomial(1, p)
+                action = actions[act_idx]
         obs, reward, done, expert_policy = env.step(action)
         state = torch.tensor(prepro(obs))
         if render: env.render()
@@ -142,7 +146,7 @@ def run_patch_traj(env_name, seed, model, obs_dict, act_dict, max_ep_len=200, ep
         # save info!
         episode_length += 1
     # print(episode_length)
-    return epr
+    return epr, in_dict
 
 
 def visualize_traj(traj, save_path):
@@ -358,6 +362,7 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, f
                                                                                    fix_importance=False,
                                                                                    random_importance=False)
     else:
+        tie = np.load(save_path + exp_method + '_patch_results_' + str(budget) + '.npz')['tie']
         win = np.load(save_path + exp_method + '_patch_results_' + str(budget) + '.npz')['win']
         obs_dict = np.load(save_path + exp_method + '_patch_results_' + str(budget) + '.npz')['obs']
         acts_dict = np.load(save_path + exp_method + '_patch_results_' + str(budget) + '.npz')['acts']
@@ -379,22 +384,37 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, f
     # print(len(loss_seeds))
     # print(obs_dict.shape)
     # print(acts_dict.shape)
-    
+
+    # Get the patch prob.
+    num_rounds = 0
+    num_loss = 0
+    for i in range(num_test_traj):
+        seed = i + 1000
+        r_1, in_dict = run_patch_traj(env_name, seed, model, obs_dict, acts_dict, p=0, max_ep_len=200, eps=1e-3,
+                                      render=False, mix_policy=False)
+        if r_1 !=0 and in_dict:
+            num_rounds += 1.0
+            if r_1 == -1:
+                num_loss += 1.0
+    p = num_loss/num_rounds
+    print(p)
     num_rounds = 0
     results_1 = []
     results_p = []
     for i in range(num_test_traj):
-        if i % 1000 == 0:
+        if i % 100 == 0:
             print(i)
         if i < len(loss_seeds) and not free_test:
             seed = int(loss_seeds[i])
         else:
             seed = i
         # print('=========') 
-        r_1 = run_patch_traj(env_name, seed, model, None, None, max_ep_len=200, eps=1e-3, render=False, mix_policy=False)
+        r_1, _ = run_patch_traj(env_name, seed, model, obs_dict, acts_dict, p=0, max_ep_len=200, eps=1e-3,
+                                render=False, mix_policy=False)
         # print(r_1)
         # print('----')
-        r_p = run_patch_traj(env_name, seed, model, obs_dict, acts_dict, max_ep_len=200, eps=1e-5, render=False, mix_policy=True)
+        r_p, _ = run_patch_traj(env_name, seed, model, obs_dict, acts_dict, p=p, max_ep_len=200, eps=1e-5,
+                                render=False, mix_policy=True)
         # print(r_p)
         if r_1 != 0 and r_p !=0:
             num_rounds += 1
@@ -418,21 +438,20 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, f
     print('Number of games that original policy wins but patched policy loses: %d' % num_1_win_p_loss)
     print('Number of games that original policy loses but patched policy win: %d' % num_1_loss_p_win)
    
-    if collect_dict:
-        np.savez(save_path+exp_method+'_patch_results_'+str(budget)+'.npz', tie=tie, win=win,
-                 obs=obs_dict, acts=acts_dict, results_1=results_1, results_p=results_p, seed=loss_seeds)
+    np.savez(save_path+exp_method+'_patch_results_'+str(budget)+'.npz', tie=tie, win=win,
+             obs=obs_dict, acts=acts_dict, results_1=results_1, results_p=results_p, seed=loss_seeds, p=p)
 
     return 0
 
 
 budget = 10
-num_patch_traj = 1880
-num_test_traj = 500
+num_patch_traj = 30
+num_test_traj = 50
 
 exp_methods = ['dgp', 'value', 'rudder', 'saliency', 'attention', 'rationale']
 sals = [dgp_1_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
 
-for k in range(4, 6):
+for k in range(0, 6):
     patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, free_test=True, collect_dict=True)
 
 
