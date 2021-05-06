@@ -76,7 +76,7 @@ elif args.explainer == 'rudder':
                               n_action=n_action, embed_dim=embed_dim, encoder_type=encoder_type)
     name = 'rudder_' + encoder_type + '_' + rnn_cell_type + '_' + str(embed_dim)
     rudder_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path,
-                           save_path=save_path + name + '_model')
+                           save_path=save_path + name + '_model.data')
     rudder_explainer.test(test_idx, batch_size, traj_path)
     rudder_explainer.load(save_path + name + '_model.data')
     rudder_explainer.test(test_idx, batch_size, traj_path)
