@@ -397,7 +397,9 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, f
             if r_1 == -1:
                 num_loss += 1.0
     p = num_loss/num_rounds
+    print('===')
     print(p)
+    print('===')
     num_rounds = 0
     results_1 = []
     results_p = []
@@ -445,14 +447,14 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, f
 
 
 budget = 10
-num_patch_traj = 30
-num_test_traj = 50
+num_patch_traj = 1880
+num_test_traj = 200
 
-exp_methods = ['dgp', 'value', 'rudder', 'saliency', 'attention', 'rationale']
-sals = [dgp_1_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
+exp_methods = ['dgp', 'value', 'rudder', 'attention', 'rationale', 'saliency']
+sals = [dgp_1_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
 
 for k in range(0, 6):
-    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, free_test=True, collect_dict=True)
+    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, free_test=True, collect_dict=False)
 
 
 
