@@ -75,9 +75,9 @@ elif args.explainer == 'rudder':
     rudder_explainer = Rudder(seq_len=seq_len, len_diff=len_diff, input_dim=input_dim, hiddens=hiddens,
                               n_action=n_action, embed_dim=embed_dim, encoder_type=encoder_type)
     name = 'rudder_' + encoder_type + '_' + rnn_cell_type + '_' + str(embed_dim)
-    # rudder_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path,
-    #                        save_path=save_path + name + '_model')
-    # rudder_explainer.test(test_idx, batch_size, traj_path)
+    rudder_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path,
+                           save_path=save_path + name + '_model')
+    rudder_explainer.test(test_idx, batch_size, traj_path)
     rudder_explainer.load(save_path + name + '_model.data')
     rudder_explainer.test(test_idx, batch_size, traj_path)
     sal_rudder_all, fid_all, stab_all, abs_all, mean_time = rudder_explainer.exp_fid_stab(exp_idx, batch_size,
