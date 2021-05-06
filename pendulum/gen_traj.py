@@ -87,7 +87,7 @@ def run_agent(args, model=None, env=None):
 
     if not write_final_reward:
         process_normalized_rewards(max_reward=max_reward_sum, min_reward=min_reward_sum,
-                                n_eps=args.episodes, base_path=Path(args.log_dir))
+                                n_eps=args.episodes, base_path=Path(args.log_dir), game=args.game)
     
     metadata_dict = {'max_reward_sum': np.array(max_reward_sum).squeeze(), 'min_reward_sum': np.array(min_reward_sum).squeeze()}
     np.savez(Path(args.log_dir)/'metadata.npz', **metadata_dict)
@@ -96,9 +96,9 @@ def read_metadata(training_dir):
     f = np.load(Path(training_dir)/'metadata.npz')
     return f['max_reward_sum'], f['min_reward_sum']
 
-def process_normalized_rewards(max_reward, min_reward, n_eps, base_path):
+def process_normalized_rewards(max_reward, min_reward, n_eps, base_path, game):
     for i_episode in trange(n_eps):
-        path = base_path/f'{i_episode}.npz'
+        path = base_path/f'{game}_traj_{i_episode}.npz'
         save_dict = dict(np.load(path))
         reward_sum = save_dict['rewards'].sum()
         normalized_reward = (reward_sum-min_reward)/(max_reward-min_reward)
