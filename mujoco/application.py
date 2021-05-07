@@ -8,10 +8,161 @@ from matplotlib import pyplot as plt
 from utils import rl_fed, load_agent, load_from_file
 
 
+def run_exploration(budget, importance, num_trajs, num_step=3, fix_importance=True, random_importance=False):
+    tie = []
+    win = []
+    correct_trajs_all = []
+    num_loss = 0
+    loss_seeds = []
+    for i in range(num_trajs):
+        original_traj = np.load('trajs_exp/Pong-v0_traj_{}.npz'.format(i))
+        orin_reward = original_traj['final_rewards']
+        seed = int(original_traj['seed'])
+        if orin_reward == 1:
+            continue
+        loss_seeds.append(seed)
+        # print(num_loss)
+        if random_importance:
+            importance_traj = np.arange(num_step)
+            np.random.shuffle(importance_traj)
+        elif fix_importance:
+            importance_traj = [184, 185, 186]
+        else:
+            importance_traj = np.argsort(importance[i,])[::-1][0:num_step]
+        j = 0
+        j_1 = 0
+        correct_trajs = []
+        for _ in range(budget):
+            replay_reward, traj = run_exploration_traj(env=env, seed=seed, model=model, obs_rms=obs_rms,
+                                                       original_traj=original_traj, importance=importance_traj,
+                                                       render=False)
+            if replay_reward == 0:
+                j += 1
+            if replay_reward == 1:
+                j_1 += 1
+            if replay_reward == 1 and len(correct_trajs) == 0:
+                correct_trajs.append(traj)
+        correct_trajs_all.append(correct_trajs)
+        tie.append(j)
+        win.append(j_1)
+        num_loss += 1
+    print(num_loss)
+
+    obs_all = []
+    acts_all = []
+    for trajs in correct_trajs_all:
+        for traj in trajs:
+            for step in range(len(traj[0])):
+                obs_all.append(traj[0][step].numpy())
+                acts_all.append(traj[1][step])
+
+    obs_all = np.array(obs_all)
+    acts_all = np.array(acts_all)
+
+    print(obs_all.shape)
+    print(acts_all.shape)
+
+    return np.array(tie), np.array(win), correct_trajs_all, obs_all, acts_all, loss_seeds
+
+
+def run_exploration_traj(env, seed, model, obs_rms, original_traj, importance, agent_type=['zoo', 'zoo'],
+                         exp_agent_id=1, max_ep_len=200, render=False):
+
+    values_orin = original_traj['values']
+    traj_len = np.count_nonzero(values_orin)
+    start_step = max_ep_len - traj_len
+    env.seed(seed)
+
+    episode_length, epr, done = 0, 0, False  # bookkeeping
+    observation = env.reset()  # get first state
+    obs = observation[1][exp_agent_id]
+    state_all = []
+    action_all = []
+    for i in range(traj_len + 200):
+        if start_step + i in importance:
+            state_all.append(obs)
+        actions = []
+        for id, obs in enumerate(observation):
+            if agent_type[id] == 'zoo':
+                if id != exp_agent_id:
+                    # fix the opponent agent.
+                    act, _ = model[id].act(stochastic=False, observation=obs)
+                else:
+                    # victim agent.
+                    act, _ = model[id].act(stochastic=False, observation=obs)
+                    if start_step + i in importance:
+                        # print(start_step + i)
+                        # add noise into the action
+                        act = act + np.random.rand(act.shape[0]) * 3 - 1
+                        action_all.append(act)
+            else:
+                obs = np.clip((obs - obs_rms.mean) / np.sqrt(obs_rms.var + 1e-8), -10, 10)
+                act = model[id].step(obs=obs[None, :], deterministic=True)[0][0]
+            actions.append(act)
+        actions = tuple(actions)
+        observation, _, done, infos = env.step(actions)
+        obs = observation[1][exp_agent_id]
+        reward = infos[exp_agent_id]['reward_remaining']
+        episode_length += 1
+        if render: env.render()
+        episode_length += 1
+        if done:
+            epr = reward
+            break
+    return epr, (state_all, action_all)
+
+
+def run_patch_traj(env, seed, model, obs_rms, obs_dict, act_dict, p, agent_type=['zoo', 'zoo'], exp_agent_id=1,
+                   max_ep_len=200, eps=1e-4, render=False, mix_policy=True):
+
+    env.seed(seed)
+    in_dict = False
+
+    act_idx = np.random.binomial(1, p)
+    episode_length, epr, done = 0, 0, False  # bookkeeping
+    observation = env.reset()
+
+    for i in range(max_ep_len):
+        actions = []
+        for id, obs in enumerate(observation):
+            if agent_type[id] == 'zoo':
+                if id != exp_agent_id:
+                    # fixed opponent agent
+                    act, _ = model[id].act(stochastic=False, observation=obs)
+                else:
+                    # victim agent we need to explain
+                    # action = acts_orin[start_step+i]
+                    act, _ = model[id].act(stochastic=False, observation=obs)
+                    state_diff = np.sum(np.abs(obs_dict - obs), 1)
+                    if np.min(state_diff) < eps:
+                        in_dict = True
+                        if mix_policy:
+                            idx = np.argmin(state_diff)
+                            acts = [act, act_dict[idx]]
+                            act = acts[act_idx]
+            else:
+                obs = np.clip((obs - obs_rms.mean) / np.sqrt(obs_rms.var + 1e-8), -10, 10)
+                act = model[id].step(obs=obs[None, :], deterministic=True)[0][0]
+
+            actions.append(act)
+
+        actions = tuple(actions)
+        observation, _, done, infos = env.step(actions)
+        reward = infos[exp_agent_id]['reward_remaining']
+        if render: env.render()
+        episode_length += 1
+        if done:
+            assert reward != 0
+            epr = reward
+            break
+    # print(episode_length)
+    return epr, in_dict
+
+
 def visualize_traj(traj, save_path):
-    acts_orin = traj['actions']
+    values_orin = traj['values']
     obs_orin = traj['observations']
-    traj_len = np.count_nonzero(acts_orin)
+    traj_len = np.count_nonzero(values_orin)
     start_step = max_ep_len - traj_len
 
     for i in range(traj_len):
@@ -78,8 +229,7 @@ def demonstrate_trajs(traj_idx, num_step=10):
         f.writelines('Most unimportant: \n')
         f.writelines(np.array2string(exp_dgp_2[-num_step:]) + '\n')
     f.close()
-
-    original_traj = np.load('trajs_exp/Pong-v0_traj_'+str(traj_idx)+'.npz')
+    original_traj = np.load('trajs_exp/youshallnotpasshumans_v0_traj_'+str(traj_idx)+'.npz')
     visualize_traj(original_traj, 'exp_results/'+str(traj_idx)+'/')
 
     return 0
@@ -220,3 +370,112 @@ for k in range(8):
     tie = np.where(diff_50[k, ] == 1000)[0].shape[0]
     print('Win rate 50: %.2f' % (100 * (win / total_trajs_num)))
     print('Non loss rate 50: %.2f' % (100 * ((win+tie)/total_trajs_num)))
+
+
+# Patch individual trajs and policy.
+def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, free_test=False, collect_dict=True):
+    print(exp_method)
+    if collect_dict:
+        if exp_method == 'dgp':
+            tie, win, trajs_all, obs_dict, acts_dict, loss_seeds = run_exploration(budget, sal, num_patch_traj)
+        else:
+            tie, win, trajs_all, obs_dict, acts_dict, loss_seeds = run_exploration(budget, sal, num_patch_traj,
+                                                                                   fix_importance=False,
+                                                                                   random_importance=False)
+    else:
+        tie = np.load(save_path + exp_method + '_patch_results_' + str(budget) + '.npz')['tie']
+        win = np.load(save_path + exp_method + '_patch_results_' + str(budget) + '.npz')['win']
+        obs_dict = np.load(save_path + exp_method + '_patch_results_' + str(budget) + '.npz')['obs']
+        acts_dict = np.load(save_path + exp_method + '_patch_results_' + str(budget) + '.npz')['acts']
+        loss_seeds = np.load(save_path + exp_method + '_patch_results_' + str(budget) + '.npz')['seed']
+
+    total_trajs_num = float(win.shape[0])
+    win_num = np.count_nonzero(win)
+    print('Win rate: %.2f' % (100 * (win_num / total_trajs_num)))
+    print('Exploration success rate: %.2f' % (100 * (np.mean(win) / budget)))
+
+    # print(obs_dict.shape)
+    # print(acts_dict.shape)
+    # print(len(loss_seeds))
+    num_seed_trajs = 22  # int((len(loss_seeds)/num_patch_traj)*num_test_traj)
+    loss_seeds = loss_seeds[0:num_seed_trajs]
+    obs_dict = obs_dict[0:num_seed_trajs, ]
+    acts_dict = acts_dict[0:num_seed_trajs, ]
+
+    # print(len(loss_seeds))
+    # print(obs_dict.shape)
+    # print(acts_dict.shape)
+
+    # Get the patch prob.
+    num_rounds = 0
+    num_loss = 0
+    for i in range(num_test_traj):
+        seed = i + 1000
+        r_1, in_dict = run_patch_traj(env, seed, model, obs_rms, obs_dict, acts_dict, p=0, eps=1e-3, render=False,
+                                      mix_policy=False)
+        if r_1 != 0 and in_dict:
+            num_rounds += 1.0
+            if r_1 == -1:
+                num_loss += 1.0
+    p = num_loss / num_rounds
+    print('===')
+    print(p)
+    print('===')
+    num_rounds = 0
+    results_1 = []
+    results_p = []
+    for i in range(num_test_traj):
+        if i % 100 == 0:
+            print(i)
+        if i < len(loss_seeds) and not free_test:
+            seed = int(loss_seeds[i])
+        else:
+            seed = i
+        # print('=========')
+        r_1, _ = run_patch_traj(env, seed, model, obs_rms, obs_dict, acts_dict, p=0, eps=1e-3, max_ep_len=200,
+                                render=False, mix_policy=False)
+        # print(r_1)
+        # print('----')
+        r_p, _ = run_patch_traj(env, seed, model, obs_rms, obs_dict, acts_dict, p=p, eps=1e-5, max_ep_len=200,
+                                render=False, mix_policy=True)
+
+        # print(r_p)
+        if r_1 != 0 and r_p != 0:
+            num_rounds += 1
+            results_1.append(r_1)
+            results_p.append(r_p)
+
+    results_1 = np.array(results_1)
+    results_p = np.array(results_p)
+
+    num_win_1 = np.where(results_1 == 1)[0].shape[0]
+    num_win_p = np.where(results_p == 1)[0].shape[0]
+
+    win_diff = results_1 - results_p
+    num_all_win = np.where(win_diff == 0)[0].shape[0]
+    num_1_win_p_loss = np.where(win_diff == 2)[0].shape[0]
+    num_1_loss_p_win = np.where(win_diff == -2)[0].shape[0]
+
+    print('Testing winning rate of the original model %.2f' % (100 * (num_win_1 / num_rounds)))
+    print('Testing winning rate of the patched model %.2f' % (100 * (num_win_p / num_rounds)))
+    print('Total Number of games: %d' % num_rounds)
+    print('Number of games that original policy wins but patched policy loses: %d' % num_1_win_p_loss)
+    print('Number of games that original policy loses but patched policy win: %d' % num_1_loss_p_win)
+
+    np.savez(save_path + exp_method + '_patch_results_' + str(budget) + '.npz', tie=tie, win=win,
+             obs=obs_dict, acts=acts_dict, results_1=results_1, results_p=results_p, seed=loss_seeds, p=p)
+
+    return 0
+
+
+budget = 10
+num_patch_traj = 1880
+num_test_traj = 500
+
+exp_methods = ['dgp', 'value', 'rudder', 'attention', 'rationale', 'saliency']
+sals = [dgp_1_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
+
+for k in range(6):
+    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, free_test=True,
+                       collect_dict=True)
+
