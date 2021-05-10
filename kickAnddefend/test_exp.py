@@ -1,6 +1,6 @@
 import os, sys
 sys.path.append('..')
-os.environ["CUDA_VISIBLE_DEVICES"] = " "
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import numpy as np
 import argparse
 from explainer.DGP_XRL import DGPXRL
@@ -10,7 +10,7 @@ from explainer.RnnSaliency_XRL import RnnSaliency
 from explainer.RationaleNet_XRL import RationaleNet
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--explainer", type=str, default='dgp')
+parser.add_argument("--explainer", type=str, default='saliency')
 
 args = parser.parse_args()
 
@@ -112,7 +112,7 @@ elif args.explainer == 'saliency':
       saliency_explainer.test(exp_idx, batch_size, traj_path)
 
       sal_best, fid_best, stab_best, acc_best, abs_diff_best, time_best = saliency_explainer.exp_fid_stab(
-          exp_idx, batch_size, traj_path, True, 'gradient', n_samples=15, n_stab_samples=n_stab_samples)
+          exp_idx, batch_size, traj_path, False, 'smoothgrad', n_samples=15, n_stab_samples=n_stab_samples)
 
       print('=============================================')
       print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_best[0])))
