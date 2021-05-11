@@ -56,7 +56,9 @@ def rollout(agent_path, env, env_name, num_traj, agent_type=['zoo','zoo'], norm_
         print('Traj %d out of %d.' %(i, num_traj))
         cur_obs, cur_states, cur_acts, cur_rewards, cur_values = [], [], [], [], []
         observation = env.reset()
-
+        for id in range(2):
+            if agent_type[id] == 'zoo':
+               policy[id].reset()
         episode_length, epr, eploss, done = 0, 0, 0, False  # bookkeeping
         
         while not done and episode_length < max_ep_len:
@@ -80,9 +82,6 @@ def rollout(agent_path, env, env_name, num_traj, agent_type=['zoo','zoo'], norm_
             reward = infos[exp_agent_id]['reward_remaining']
             if done: 
                epr = reward
-               for id in range(2):
-                   if agent_type[id] == 'zoo':
-                      policy[id].reset()
             state = None
             if save_obs:
                state = env.render(mode='rgb_array')
