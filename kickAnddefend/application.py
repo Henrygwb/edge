@@ -337,15 +337,15 @@ for k in range(8):
 
         replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:10,],
-                                  render=False, mask_act=True)
+                                  render=False, exp_agent_id=0, mask_act=True)
 
         replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:30,],
-                                  render=False, mask_act=True)
+                                  render=False, exp_agent_id=0, mask_act=True)
 
         replay_reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:50,],
-                                  render=False, mask_act=True)
+                                  render=False, exp_agent_id=0, mask_act=True)
 
 
         diff_all_10[k, total_traj_num] = orin_reward-replay_reward_10
