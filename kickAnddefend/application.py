@@ -66,7 +66,7 @@ def run_exploration(budget, importance, num_trajs, num_step=3, fix_importance=Tr
 
 
 def run_exploration_traj(env, seed, model, obs_rms, original_traj, importance, agent_type=['zoo', 'zoo'],
-                         exp_agent_id=1, max_ep_len=200, render=False):
+                         exp_agent_id=0, max_ep_len=200, render=False):
 
     values_orin = original_traj['values']
     traj_len = np.count_nonzero(values_orin)
@@ -115,7 +115,7 @@ def run_exploration_traj(env, seed, model, obs_rms, original_traj, importance, a
     return epr, (state_all, action_all)
 
 
-def run_patch_traj(env, seed, model, obs_rms, obs_dict, act_dict, p, agent_type=['zoo', 'zoo'], exp_agent_id=1,
+def run_patch_traj(env, seed, model, obs_rms, obs_dict, act_dict, p, agent_type=['zoo', 'zoo'], exp_agent_id=0,
                    max_ep_len=200, eps=1e-4, render=False, mix_policy=True):
 
     env.seed(seed)
