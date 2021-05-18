@@ -341,7 +341,6 @@ reward_30_all = np.zeros((6, 500))
 reward_50_all = np.zeros((6, 500))
 for k in range(6):
     print(k)
-    total_traj_num = 0
     importance = exps_all[k]
     for i in range(500):
         if i % 100 ==0: print(i)
@@ -368,12 +367,10 @@ for k in range(6):
                                    max_ep_len=max_ep_len, importance=importance_traj[0:50,], render=False,
                                    mask_act=True)
 
-        print('*************************')
         orin_reward_all[k, i] = orin_reward
         reward_10_all[k, i] = reward_10
         reward_30_all[k, i] = reward_30
         reward_50_all[k, i] = reward_50
-        total_traj_num += 1
 
 np.savez(save_path+'att_results.npz', orin_reward=orin_reward_all,
          diff_10=reward_10_all, diff_30=reward_30_all, diff_50=reward_50_all)
