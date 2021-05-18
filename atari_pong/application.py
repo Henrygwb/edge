@@ -150,6 +150,50 @@ def run_patch_traj(env_name, seed, model, obs_dict, act_dict, p, max_ep_len=200,
     return epr, in_dict
 
 
+def rl_attack_traj(env_name, seed, model, original_traj, importance, max_ep_len=1e3, render=False, mask_act=False):
+
+    acts_orin = original_traj['actions']
+    traj_len = np.count_nonzero(acts_orin)
+    start_step = max_ep_len - traj_len
+
+    env = gym.make(env_name)
+    env.seed(seed)
+    env.env.frameskip = 3
+
+    episode_length, epr, done = 0, 0, False  # bookkeeping
+    obs_0 = env.reset()  # get first state
+    state = torch.tensor(prepro(obs_0))
+    hx, cx = Variable(torch.zeros(1, 256)), Variable(torch.zeros(1, 256))
+    act_set = np.array([0, 1, 2, 3, 4, 5])
+    for i in range(traj_len+100):
+        if epr != 0:
+            break
+        # Steps before the important steps reproduce original traj.
+        # action = acts_orin[start_step+i] - 1
+        value, logit, (hx, cx) = model((Variable(state.view(1, 1, 80, 80)), (hx, cx)))
+        hx, cx = Variable(hx.data), Variable(cx.data)
+        prob = F.softmax(logit, dim=-1)
+        action = prob.max(1)[1].data.numpy()[0]
+        if mask_act:
+            # Important steps take suboptimal actions.
+            if start_step+i in importance:
+                act_set_1 = act_set[act_set!=action]
+                action = np.random.choice(act_set_1)
+            # Steps after the important steps take optimal actions.
+            # if start_step+1 > importance[-1]:
+            #     action = action_model
+        obs, reward, done, expert_policy = env.step(action)
+        state = torch.tensor(prepro(obs))
+        if render: env.render()
+        epr += reward
+
+        # save info!
+        episode_length += 1
+
+    # print('step # {}, reward {:.0f}.'.format(episode_length, epr))
+    return epr
+
+
 def visualize_traj(traj, save_path):
     acts_orin = traj['actions']
     obs_orin = traj['observations']
@@ -290,62 +334,65 @@ dgp_1_sal = dgp_1_fid_results['sal']
 # del step_covar
 
 # Launch attack at the most importance time steps: Top 10/30/50.
-# exps_all = [sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal, dgp_1_sal, dgp_2_sal]
-# diff_all_10 = np.zeros((7, 1671))
-# diff_all_30 = np.zeros((7, 1671))
-# diff_all_50 = np.zeros((7, 1671))
-# for k in range(7):
-#     print(k)
-#     total_traj_num = 0
-#     importance = exps_all[k]
-#     for i in range(1880):
-#         if k == 2:
-#             importance_traj = np.arange(max_ep_len)
-#             np.random.shuffle(importance_traj)
-#         else:
-#             importance_traj = np.argsort(importance[i,])[::-1]
-#         original_traj = np.load('trajs_exp/Pong-v0_traj_{}.npz'.format(i))
-#         orin_reward = original_traj['final_rewards']
-#         if orin_reward == 0:
-#             continue
-#         seed = int(original_traj['seed'])
-#         replay_reward_10 = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-#                                   max_ep_len=max_ep_len, importance=importance_traj[0:10,], render=False, mask_act=True)
-#
-#         replay_reward_30 = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-#                                   max_ep_len=max_ep_len, importance=importance_traj[0:30,], render=False, mask_act=True)
-#
-#         replay_reward_50 = rl_fed(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-#                                   max_ep_len=max_ep_len, importance=importance_traj[0:50,], render=False, mask_act=True)
-#
-#         diff_all_10[k, total_traj_num] = orin_reward-replay_reward_10
-#         diff_all_30[k, total_traj_num] = orin_reward-replay_reward_30
-#         diff_all_50[k, total_traj_num] = orin_reward-replay_reward_50
-#         total_traj_num += 1
-#
-# np.savez(save_path+'att_results.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_all_50)
-# att_results = np.load(save_path+'att_results.npz')
-# diff_10 = att_results['diff_10']
-# diff_30 = att_results['diff_30']
-# diff_50 = att_results['diff_50']
-# total_trajs_num = float(diff_10.shape[1])
-# for k in range(7):
-#     print('======================')
-#     print(str(k))
-#     win = np.where(diff_10[k, ] == 0)[0].shape[0]
-#     tie = np.where(diff_10[k, ] == 1)[0].shape[0]
-#     print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
-#     print('Non loss rate 10: %.2f' % (100 * ((win+tie)/total_trajs_num)))
-#
-#     win = np.where(diff_30[k, ] == 0)[0].shape[0]
-#     tie = np.where(diff_30[k, ] == 1)[0].shape[0]
-#     print('Win rate 30: %.2f' % (100 * (win / total_trajs_num)))
-#     print('Non loss rate 30: %.2f' % (100 * ((win+tie)/total_trajs_num)))
-#
-#     win = np.where(diff_50[k, ] == 0)[0].shape[0]
-#     tie = np.where(diff_50[k, ] == 1)[0].shape[0]
-#     print('Win rate 50: %.2f' % (100 * (win / total_trajs_num)))
-#     print('Non loss rate 50: %.2f' % (100 * ((win+tie)/total_trajs_num)))
+exps_all = [dgp_1_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
+orin_reward_all = np.zeros((6, 500))
+reward_10_all = np.zeros((6, 500))
+reward_30_all = np.zeros((6, 500))
+reward_50_all = np.zeros((6, 500))
+for k in range(6):
+    print(k)
+    total_traj_num = 0
+    importance = exps_all[k]
+    for i in range(500):
+        if k == 2:
+            importance_traj = np.arange(max_ep_len)
+            np.random.shuffle(importance_traj)
+        else:
+            importance_traj = np.argsort(importance[i,])[::-1]
+        original_traj = np.load('trajs_exp/Pong-v0_traj_{}.npz'.format(i))
+        seed = int(original_traj['seed']) + 2000
+        orin_reward = rl_attack_traj(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
+                                     max_ep_len=max_ep_len, importance=importance_traj[0:10,], render=False,
+                                     mask_act=False)
+
+        reward_10 = rl_attack_traj(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
+                                   max_ep_len=max_ep_len, importance=importance_traj[0:10,], render=False,
+                                   mask_act=True)
+
+        reward_30 = rl_attack_traj(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
+                                   max_ep_len=max_ep_len, importance=importance_traj[0:30,], render=False,
+                                   mask_act=True)
+
+        reward_50 = rl_attack_traj(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
+                                   max_ep_len=max_ep_len, importance=importance_traj[0:50,], render=False,
+                                   mask_act=True)
+
+        print('*************************')
+        orin_reward_all[k, i] = orin_reward
+        reward_10_all[k, i] = reward_10
+        reward_30_all[k, i] = reward_30
+        reward_50_all[k, i] = reward_50
+        total_traj_num += 1
+
+np.savez(save_path+'att_results.npz', orin_reward=orin_reward_all,
+         diff_10=reward_10_all, diff_30=reward_30_all, diff_50=reward_50_all)
+
+att_results = np.load(save_path+'att_results.npz')
+total_trajs_num = 500
+for k in range(6):
+    print('======================')
+    print(str(k))
+    win = np.where(orin_reward_all[k, ] == 0)[0].shape[0]
+    print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
+
+    win = np.where(reward_10_all[k, ] == 0)[0].shape[0]
+    print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
+
+    win = np.where(reward_30_all[k, ] == 0)[0].shape[0]
+    print('Win rate 30: %.2f' % (100 * (win / total_trajs_num)))
+
+    win = np.where(reward_50_all[k, ] == 0)[0].shape[0]
+    print('Win rate 50: %.2f' % (100 * (win / total_trajs_num)))
 
 
 # Patch individual trajs and policy.
@@ -447,20 +494,15 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, f
     return 0
 
 
-budget = 10
-num_patch_traj = 1880
-num_test_traj = 500
-
-exp_methods = ['dgp', 'value', 'rudder', 'attention', 'rationale', 'saliency']
-sals = [dgp_1_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
-
-for k in range(6):
-    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, free_test=True, collect_dict=True)
-
-
-
-
-
+# budget = 10
+# num_patch_traj = 1880
+# num_test_traj = 500
+#
+# exp_methods = ['dgp', 'value', 'rudder', 'attention', 'rationale', 'saliency']
+# sals = [dgp_1_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
+#
+# for k in range(6):
+#     patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, free_test=True, collect_dict=True)
 
 
 
