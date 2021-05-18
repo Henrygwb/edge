@@ -37,8 +37,8 @@ def rollout(agent_path, env, env_name, num_traj, agent_type=['zoo','zoo'], norm_
                           1, 1, 1, reuse=False))
 
     sess.run(tf.variables_initializer(tf.global_variables()))
-    obs_rms = load_from_file(norm_path)
-    
+    if norm_path != None:
+       obs_rms = load_from_file(norm_path)
     for i in range(2):
         if agent_type[i] == 'zoo':
            param_path = get_zoo_path(env_name, tag=i+1)
@@ -55,12 +55,12 @@ def rollout(agent_path, env, env_name, num_traj, agent_type=['zoo','zoo'], norm_
         env.seed(i)
         print('Traj %d out of %d.' %(i, num_traj))
         cur_obs, cur_states, cur_acts, cur_rewards, cur_values = [], [], [], [], []
+        # reset environment and agent (lstm policy)
         observation = env.reset()
         for id in range(2):
-            if agent_type[id] == 'zoo':
-               policy[id].reset()
-        episode_length, epr, eploss, done = 0, 0, 0, False  # bookkeeping
+            if agent_type[id] == 'zoo': policy[id].reset()
         
+        episode_length, epr, eploss, done = 0, 0, 0, False  # bookkeeping
         while not done and episode_length < max_ep_len:
             episode_length += 1
             actions = []
@@ -164,19 +164,26 @@ def load_agent(env_name, agent_type, agent_path):
     policy = []
     for i in range(2):
         if agent_type[i] == 'zoo':
-            policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
-                                         ob_space=env.observation_space.spaces[i],
-                                         ac_space=env.action_space.spaces[i],
-                                         hiddens=[64, 64], normalize=True))
+           if env_name == 'multicomp/YouShallNotPassHumans-v0':
+               policy.append(MlpPolicyValue(scope="policy" + str(i), reuse=False,
+                                            ob_space=env.observation_space.spaces[i],
+                                            ac_space=env.action_space.spaces[i],
+                                            hiddens=[64, 64], normalize=True))
+           else:
+               policy.append(LSTMPolicy(scope="policy" + str(i), reuse=False,
+                                        ob_space=env.observation_space.spaces[i],
+                                        ac_space=env.action_space.spaces[i],
+                                        hiddens=[128, 128], normalize=True))
+
         elif agent_type[i] == 'adv':
-            policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i],
-                                    1, 1, 1, reuse=False))
+           policy.append(MlpPolicy(sess, env.observation_space.spaces[i], env.action_space.spaces[i],
+                          1, 1, 1, reuse=False))
 
     sess.run(tf.variables_initializer(tf.global_variables()))
 
     for i in range(2):
         if agent_type[i] == 'zoo':
-            param_path = agent_path + '/agent' + str(i + 1) + '_parameters-v1.pkl'
+            param_path = get_zoo_path(env_name, tag=i + 1)
             param = load_from_file(param_pkl_path=param_path)
             setFromFlat(policy[i].get_variables(), param)
         else:
@@ -212,6 +219,10 @@ def rl_fed(env, seed, model, obs_rms, agent_type, original_traj, max_ep_len, imp
     episode_length, epr, done = 0, 0, False  # bookkeeping
     observation = env.reset()
 
+    for id in range(2):
+        if agent_type[id] == 'zoo':
+            model[id].reset()
+
     for i in range(traj_len):
         actions = []
         for id, obs in enumerate(observation):
@@ -242,7 +253,6 @@ def rl_fed(env, seed, model, obs_rms, agent_type, original_traj, max_ep_len, imp
 
         if render: env.render()
         if done: 
-            assert reward != 0
             epr = reward
             break
     print('step # {}, reward {:.0f}.'.format(episode_length, epr))
