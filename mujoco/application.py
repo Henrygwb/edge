@@ -317,6 +317,7 @@ for k in range(6):
     total_traj_num = 0
     importance = exps_all[k]
     for i in range(500):
+        if i % 100 ==0: print(i)
         if k == 2:
             importance_traj = np.arange(max_ep_len)
             np.random.shuffle(importance_traj)
