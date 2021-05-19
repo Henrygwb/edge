@@ -15,7 +15,7 @@ def run_exploration(budget, importance, num_trajs, num_step=3, fix_importance=Tr
     num_loss = 0
     loss_seeds = []
     for i in range(num_trajs):
-        original_traj = np.load('trajs_exp/youshallnotpasshumans_v0_traj_{}.npz'.format(i))
+        original_traj = np.load('trajs_exp/KickAndDefend-v0_traj_{}.npz'.format(i))
         orin_reward = original_traj['final_rewards']
         seed = int(original_traj['seeds'])
         if orin_reward == 1:
@@ -66,7 +66,7 @@ def run_exploration(budget, importance, num_trajs, num_step=3, fix_importance=Tr
 
 
 def run_exploration_traj(env, seed, model, obs_rms, original_traj, importance, agent_type=['zoo', 'zoo'],
-                         exp_agent_id=1, max_ep_len=200, render=False):
+                         exp_agent_id=0, max_ep_len=200, render=False):
 
     values_orin = original_traj['values']
     traj_len = np.count_nonzero(values_orin)
@@ -75,6 +75,9 @@ def run_exploration_traj(env, seed, model, obs_rms, original_traj, importance, a
 
     episode_length, epr, done = 0, 0, False  # bookkeeping
     observation = env.reset()  # get first state
+    for id in range(2):
+        if agent_type[id] == 'zoo':
+            model[id].reset()
     obs = observation[exp_agent_id]
     state_all = []
     action_all = []
@@ -112,7 +115,7 @@ def run_exploration_traj(env, seed, model, obs_rms, original_traj, importance, a
     return epr, (state_all, action_all)
 
 
-def run_patch_traj(env, seed, model, obs_rms, obs_dict, act_dict, p, agent_type=['zoo', 'zoo'], exp_agent_id=1,
+def run_patch_traj(env, seed, model, obs_rms, obs_dict, act_dict, p, agent_type=['zoo', 'zoo'], exp_agent_id=0,
                    max_ep_len=200, eps=1e-4, render=False, mix_policy=True):
 
     env.seed(seed)
@@ -121,6 +124,9 @@ def run_patch_traj(env, seed, model, obs_rms, obs_dict, act_dict, p, agent_type=
     act_idx = np.random.binomial(1, p)
     episode_length, epr, done = 0, 0, False  # bookkeeping
     observation = env.reset()
+    for id in range(2):
+        if agent_type[id] == 'zoo':
+            model[id].reset()
 
     for i in range(max_ep_len):
         actions = []
@@ -169,6 +175,7 @@ def visualize_traj(traj, save_path):
         obs_tmp = obs_orin[start_step+i]
         plt.axis('off')
         plt.imsave(save_path+str(i+start_step)+'.png', obs_tmp)
+        plt.close()
 
 
 def demonstrate_trajs(traj_idx, num_step=10):
@@ -229,19 +236,18 @@ def demonstrate_trajs(traj_idx, num_step=10):
         f.writelines('Most unimportant: \n')
         f.writelines(np.array2string(exp_dgp_2[-num_step:]) + '\n')
     f.close()
-    original_traj = np.load('trajs_exp/youshallnotpasshumans_v0_traj_'+str(traj_idx)+'.npz')
+    original_traj = np.load('trajs_exp/KickAndDefend-v0_traj_'+str(traj_idx)+'.npz')
     visualize_traj(original_traj, 'exp_results/'+str(traj_idx)+'/')
 
     return 0
 
 
 save_path = 'exp_results/'
-env_name = 'multicomp/YouShallNotPassHumans-v0'
+env_name = 'multicomp/KickAndDefend-v0'
 max_ep_len = 200
-agent_path = './agent-zoo/you-shall-not-pass'
+agent_path = './agent-zoo/kick-and-defend'
 model = load_agent(env_name, agent_type=['zoo','zoo'], agent_path=agent_path)
-norm_path = agent_path + '/obs_rms.pkl'
-obs_rms = load_from_file(norm_path)
+obs_rms = None
 env = gym.make(env_name)
 
 # Explainer 1 - Value function.
@@ -307,63 +313,69 @@ dgp_2_sal = dgp_2_fid_results['sal']
 # del step_covar_2
 
 # Launch attack at the most importance time steps: Top 10/30/50.
-exps_all = [dgp_2_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
-orin_reward_all = np.zeros((6, 500))
-reward_10_all = np.zeros((6, 500))
-reward_30_all = np.zeros((6, 500))
-reward_50_all = np.zeros((6, 500))
-for k in range(6):
+exps_all = [dgp_2_sal, dgp_1_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal, None]
+diff_all_10 = np.zeros((8, 1695))
+diff_all_30 = np.zeros((8, 1695))
+diff_all_50 = np.zeros((8, 1695))
+for k in range(8):
     print(k)
+    total_traj_num = 0
     importance = exps_all[k]
-    for i in range(500):
-        if i % 100 ==0: print(i)
-        if k == 2:
+    for i in range(2000):
+        if i % 500 == 0: print(i)
+        if k == 7:
             importance_traj = np.arange(max_ep_len)
             np.random.shuffle(importance_traj)
         else:
-            importance_traj = np.argsort(importance[i,])[::-1]
-        original_traj = np.load('trajs_exp/Pong-v0_traj_{}.npz'.format(i))
-        seed = int(original_traj['seed']) + 2000
-        orin_reward = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                             original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:10,],
-                             render=False, mask_act=False)
+            importance_traj = np.argsort(importance[i, ])[::-1]
+        original_traj = np.load('trajs_exp/KickAndDefend-v0_traj_{}.npz'.format(i))
+        orin_reward = original_traj['final_rewards']
+        if orin_reward == 0:
+            continue
+        orin_reward = 1000
+        seed = int(original_traj['seed'])
 
-        reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                           original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:10,],
-                           render=False, mask_act=False)
+        replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:10,],
+                                  render=False, exp_agent_id=0, mask_act=True)
 
-        reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                           original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:30,],
-                           render=False, mask_act=False)
+        replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:30,],
+                                  render=False, exp_agent_id=0, mask_act=True)
 
-        reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                           original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:50,],
-                           render=False, mask_act=False)
+        replay_reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:50,],
+                                  render=False, exp_agent_id=0, mask_act=True)
 
-        orin_reward_all[k, i] = orin_reward
-        reward_10_all[k, i] = reward_10
-        reward_30_all[k, i] = reward_30
-        reward_50_all[k, i] = reward_50
 
-np.savez(save_path+'att_results.npz', orin_reward=orin_reward_all,
-         diff_10=reward_10_all, diff_30=reward_30_all, diff_50=reward_50_all)
-
+        diff_all_10[k, total_traj_num] = orin_reward-replay_reward_10
+        diff_all_30[k, total_traj_num] = orin_reward-replay_reward_30
+        diff_all_50[k, total_traj_num] = orin_reward-replay_reward_50
+        total_traj_num += 1
+    print(total_traj_num)
+np.savez(save_path+'att_results.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_all_50)
 att_results = np.load(save_path+'att_results.npz')
-total_trajs_num = 500
-for k in range(6):
+diff_10 = att_results['diff_10']
+diff_30 = att_results['diff_30']
+diff_50 = att_results['diff_50']
+total_trajs_num = float(diff_10.shape[1])
+for k in range(8):
     print('======================')
-    print(str(k))
-    win = np.where(orin_reward_all[k, ] == 0)[0].shape[0]
+    print(k)
+    win = np.where(diff_10[k, ] == 0)[0].shape[0]
+    tie = np.where(diff_10[k, ] == 1000)[0].shape[0]
     print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
+    print('Non loss rate 10: %.2f' % (100 * ((win+tie)/total_trajs_num)))
 
-    win = np.where(reward_10_all[k, ] == 0)[0].shape[0]
-    print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
-
-    win = np.where(reward_30_all[k, ] == 0)[0].shape[0]
+    win = np.where(diff_30[k, ] == 0)[0].shape[0]
+    tie = np.where(diff_30[k, ] == 1000)[0].shape[0]
     print('Win rate 30: %.2f' % (100 * (win / total_trajs_num)))
+    print('Non loss rate 30: %.2f' % (100 * ((win+tie)/total_trajs_num)))
 
-    win = np.where(reward_50_all[k, ] == 0)[0].shape[0]
+    win = np.where(diff_50[k, ] == 0)[0].shape[0]
+    tie = np.where(diff_50[k, ] == 1000)[0].shape[0]
     print('Win rate 50: %.2f' % (100 * (win / total_trajs_num)))
+    print('Non loss rate 50: %.2f' % (100 * ((win+tie)/total_trajs_num)))
 
 
 # Patch individual trajs and policy.
@@ -474,15 +486,15 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, n
     return 0
 
 
-# budget = 10
-# num_patch_traj = 2000
-# num_test_traj = 500
-#
-# exp_methods = ['dgp_1', 'dgp_2', 'value', 'rudder', 'attention', 'rationale', 'saliency']
-# sals = [dgp_1_sal, dgp_2_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
-#
-# for k in range(6):
-#     patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=True,
-#                        collect_dict=True)
-#     patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=False,
-#                        collect_dict=False)
+budget = 10
+num_patch_traj = 2000
+num_test_traj = 500
+
+exp_methods = ['dgp_1', 'dgp_2', 'value', 'rudder', 'attention', 'rationale', 'saliency']
+sals = [dgp_1_sal, dgp_2_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
+
+for k in range(6):
+    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=True,
+                       collect_dict=True)
+    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=False,
+                       collect_dict=False)

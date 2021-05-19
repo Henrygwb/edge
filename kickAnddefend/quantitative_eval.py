@@ -47,15 +47,15 @@ rat_fid = rat_fid_results['fid']
 rat_stab = rat_fid_results['stab']
 
 # # Explainer 6 - DGP.
-# dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_0.01_10_16_True_exp.npz')
-# dgp_1_sal = dgp_1_fid_results['sal']
-# dgp_1_fid = dgp_1_fid_results['fid']
-# dgp_1_stab = dgp_1_fid_results['stab']
-#
-# dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
-# dgp_2_sal = dgp_2_fid_results['sal']
-# dgp_2_fid = dgp_2_fid_results['fid']
-# dgp_2_stab = dgp_2_fid_results['stab']
+dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_0.01_10_16_True_exp.npz')
+dgp_1_sal = dgp_1_fid_results['sal']
+dgp_1_fid = dgp_1_fid_results['fid']
+dgp_1_stab = dgp_1_fid_results['stab']
+
+dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
+dgp_2_sal = dgp_2_fid_results['sal']
+dgp_2_fid = dgp_2_fid_results['fid']
+dgp_2_stab = dgp_2_fid_results['stab']
 
 # Model Fid/Stab figures.
 
@@ -191,7 +191,7 @@ print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
 print(np.sum(diff_all_50, 1))
 
-"""
+
 # DGP fidelity
 diff_all_10 = np.zeros((2, num_trajs))
 diff_all_30 = np.zeros((2, num_trajs))
@@ -221,24 +221,22 @@ for k in range(2):
         print(orin_reward)
         if k == 0:
             finals_all[i] = orin_reward
-        seed = int(original_traj['seeds'])
+        seed = int(original_traj['seed'])
 
         if orin_reward == 0:
             orin_reward = -1000
         else:
             orin_reward = 1000
-        rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                                          original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
-                                          render=False, mask_act=False)
-        replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+
+        replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo', 'zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10,
-                                  render=False, mask_act=True)
-        replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  render=False, exp_agent_id=0, mask_act=True)
+        replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo', 'zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_30,
-                                  render=False, mask_act=True)
-        replay_reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  render=False, exp_agent_id=0, mask_act=True)
+        replay_reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo', 'zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_50,
-                                  render=False, mask_act=True)
+                                  render=False, exp_agent_id=0, mask_act=True)
 
         diff_all_10[k, i] = np.abs(orin_reward-replay_reward_10)
         diff_all_30[k, i] = np.abs(orin_reward-replay_reward_30)
@@ -254,7 +252,7 @@ print(np.sum(diff_all_10, 1))
 print(np.sum(diff_all_30, 1))
 print(np.sum(diff_all_50, 1))
 
-"""
+
 # a1 = np.load('exp_results/fid_baselines.npz')['diff_10']
 # b1 = np.load('exp_results/fid_dgp.npz')['diff_10']
 # diff_10 = np.vstack((a1, b1))

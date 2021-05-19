@@ -37,8 +37,8 @@ def rollout(agent_path, env, env_name, num_traj, agent_type=['zoo','zoo'], norm_
                           1, 1, 1, reuse=False))
 
     sess.run(tf.variables_initializer(tf.global_variables()))
-    #obs_rms = load_from_file(norm_path)
-    
+    if norm_path != None:
+       obs_rms = load_from_file(norm_path)
     for i in range(2):
         if agent_type[i] == 'zoo':
            param_path = get_zoo_path(env_name, tag=i+1)
@@ -52,17 +52,15 @@ def rollout(agent_path, env, env_name, num_traj, agent_type=['zoo','zoo'], norm_
     max_ep_length = 0
     traj_count = 0
     for i in range(num_traj):
-        env.seed(100018)
+        env.seed(i)
         print('Traj %d out of %d.' %(i, num_traj))
         cur_obs, cur_states, cur_acts, cur_rewards, cur_values = [], [], [], [], []
+        # reset environment and agent (lstm policy)
         observation = env.reset()
         for id in range(2):
-            if agent_type[id] == 'zoo':
-                policy[id].reset()
-
+            if agent_type[id] == 'zoo': policy[id].reset()
+        
         episode_length, epr, eploss, done = 0, 0, 0, False  # bookkeeping
-
-
         while not done and episode_length < max_ep_len:
             episode_length += 1
             actions = []

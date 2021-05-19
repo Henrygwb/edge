@@ -118,7 +118,7 @@ elif args.explainer == 'saliency':
       saliency_explainer.test(exp_idx, batch_size, traj_path)
 
       sal_best, fid_best, stab_best, acc_best, abs_diff_best, time_best = saliency_explainer.exp_fid_stab(
-          exp_idx, batch_size, traj_path, True, 'gradient', n_samples=15, n_stab_samples=n_stab_samples)
+      exp_idx, batch_size, traj_path, True, 'integrated_gradient', n_samples=15, n_stab_samples=n_stab_samples)
 
       print('=============================================')
       print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_best[0])))

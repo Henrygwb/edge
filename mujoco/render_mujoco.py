@@ -14,10 +14,8 @@ import os, json
 
 VICTIM_INDEX = collections.defaultdict(lambda: 0)
 
-
-
 VICTIM_OPPONENT_COLORS = {
-    'Player_0': (55, 126, 184, 255),
+    'Player_0': (51, 255, 255, 255),
     'Player_1': (228, 26, 28, 255),
     'Ties': (0, 0, 0, 255),
 }
