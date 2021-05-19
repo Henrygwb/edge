@@ -344,7 +344,7 @@ for k in range(6):
     importance = exps_all[k]
     for i in range(500):
         if i % 100 ==0: print(i)
-        if k == 2:
+        if k == 3:
             importance_traj = np.arange(max_ep_len)
             np.random.shuffle(importance_traj)
         else:
@@ -380,16 +380,16 @@ total_trajs_num = 500
 for k in range(6):
     print('======================')
     print(str(k))
-    win = np.where(orin_reward_all[k, ] == 0)[0].shape[0]
+    win = np.where(att_results['orin_reward'][k, ] == 1)[0].shape[0]
+    print('Original win rate: %.2f' % (100 * (win / total_trajs_num)))
+
+    win = np.where(att_results['diff_10'][k, ] == 1)[0].shape[0]
     print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
 
-    win = np.where(reward_10_all[k, ] == 0)[0].shape[0]
-    print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
-
-    win = np.where(reward_30_all[k, ] == 0)[0].shape[0]
+    win = np.where(att_results['diff_30'][k, ] == 1)[0].shape[0]
     print('Win rate 30: %.2f' % (100 * (win / total_trajs_num)))
 
-    win = np.where(reward_50_all[k, ] == 0)[0].shape[0]
+    win = np.where(att_results['diff_50'][k, ] == 1)[0].shape[0]
     print('Win rate 50: %.2f' % (100 * (win / total_trajs_num)))
 
 
