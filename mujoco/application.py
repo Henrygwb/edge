@@ -307,7 +307,7 @@ dgp_2_sal = dgp_2_fid_results['sal']
 # del step_covar_2
 
 # Launch attack at the most importance time steps: Top 10/30/50.
-exps_all = [dgp_2_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal, 0]
+exps_all = [dgp_1_sal, dgp_2_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
 orin_reward_all = np.zeros((7, 500))
 reward_10_all = np.zeros((7, 500))
 reward_20_all = np.zeros((7, 500))
@@ -317,13 +317,13 @@ for k in range(7):
     importance = exps_all[k]
     for i in range(500):
         if i % 100 ==0: print(i)
-        if k == 6:
+        if k == 8:
             importance_traj = np.arange(max_ep_len)
             np.random.shuffle(importance_traj)
         else:
             importance_traj = np.argsort(importance[i,])[::-1]
-        original_traj = np.load('trajs_exp/Pong-v0_traj_{}.npz'.format(i))
-        seed = int(original_traj['seed']) + 2000
+        original_traj = np.load('trajs_exp/youshallnotpasshumans_v0_traj_{}.npz'.format(i))
+        seed = int(original_traj['seeds']) + 2000
         orin_reward = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                              original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:10,],
                              render=False, mask_act=False)
@@ -359,10 +359,10 @@ for k in range(7):
     win = np.where(att_results['diff_10'][k, ] == 1000)[0].shape[0]
     print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
 
-    win = np.where(att_results['diff_30'][k, ] == 1000)[0].shape[0]
+    win = np.where(att_results['diff_20'][k, ] == 1000)[0].shape[0]
     print('Win rate 20: %.2f' % (100 * (win / total_trajs_num)))
 
-    win = np.where(att_results['diff_50'][k, ] == 1000)[0].shape[0]
+    win = np.where(att_results['diff_30'][k, ] == 1000)[0].shape[0]
     print('Win rate 30: %.2f' % (100 * (win / total_trajs_num)))
 
 
