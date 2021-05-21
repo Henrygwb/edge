@@ -130,12 +130,12 @@ env = gym.make(env_name)
 
 # Baseline fidelity
 diff_all_10 = np.zeros((5, num_trajs))
+diff_all_20 = np.zeros((5, num_trajs))
 diff_all_30 = np.zeros((5, num_trajs))
-diff_all_50 = np.zeros((5, num_trajs))
 
 importance_len_10 = np.zeros((5, num_trajs))
+importance_len_20 = np.zeros((5, num_trajs))
 importance_len_30 = np.zeros((5, num_trajs))
-importance_len_50 = np.zeros((5, num_trajs))
 finals_all = np.zeros(num_trajs)
 exps_all = [sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
 for k in range(5):
@@ -150,8 +150,8 @@ for k in range(5):
         else:
             importance_traj = np.argsort(importance[i,])[::-1]
         importance_traj_10 = truncate_importance(importance_traj, 10)
+        importance_traj_20 = truncate_importance(importance_traj, 20)
         importance_traj_30 = truncate_importance(importance_traj, 30)
-        importance_traj_50 = truncate_importance(importance_traj, 50)
         original_traj = np.load('trajs_exp/KickAndDefend-v0_traj_{}.npz'.format(i))
         orin_reward = original_traj['final_rewards']
         print(orin_reward)
@@ -170,36 +170,36 @@ for k in range(5):
         replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10, 
                                   render=False, exp_agent_id=0, mask_act=True)
+        replay_reward_20 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_20, 
+                                  render=False, exp_agent_id=0, mask_act=True)
         replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_30, 
                                   render=False, exp_agent_id=0, mask_act=True)
-        replay_reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_50, 
-                                  render=False, exp_agent_id=0, mask_act=True)
 
         diff_all_10[k, i] = np.abs(orin_reward-replay_reward_10)
+        diff_all_20[k, i] = np.abs(orin_reward-replay_reward_20)
         diff_all_30[k, i] = np.abs(orin_reward-replay_reward_30)
-        diff_all_50[k, i] = np.abs(orin_reward-replay_reward_50)
         importance_len_10[k, i] = len(importance_traj_10)
+        importance_len_20[k, i] = len(importance_traj_20)
         importance_len_30[k, i] = len(importance_traj_30)
-        importance_len_50[k, i] = len(importance_traj_50)
 
-np.savez('fid_baselines.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_all_50,
-         len_10=importance_len_10, len_30=importance_len_30, len_50=importance_len_50, rewards=finals_all)
+np.savez('fid_baselines.npz', diff_10=diff_all_10, diff_20=diff_all_20, diff_30=diff_all_30,
+         len_10=importance_len_10, len_20=importance_len_20, len_30=importance_len_30, rewards=finals_all)
 
 print(np.sum(diff_all_10, 1))
+print(np.sum(diff_all_20, 1))
 print(np.sum(diff_all_30, 1))
-print(np.sum(diff_all_50, 1))
 
 
 # DGP fidelity
 diff_all_10 = np.zeros((2, num_trajs))
+diff_all_20 = np.zeros((2, num_trajs))
 diff_all_30 = np.zeros((2, num_trajs))
-diff_all_50 = np.zeros((2, num_trajs))
 
 importance_len_10 = np.zeros((2, num_trajs))
+importance_len_20 = np.zeros((2, num_trajs))
 importance_len_30 = np.zeros((2, num_trajs))
-importance_len_50 = np.zeros((2, num_trajs))
 finals_all = np.zeros(num_trajs)
 exps_all = [dgp_1_sal, dgp_2_sal]
 for k in range(2):
@@ -214,8 +214,8 @@ for k in range(2):
         else:
             importance_traj = np.argsort(importance[i,])[::-1]
         importance_traj_10 = truncate_importance(importance_traj, 10)
+        importance_traj_20 = truncate_importance(importance_traj, 20)
         importance_traj_30 = truncate_importance(importance_traj, 30)
-        importance_traj_50 = truncate_importance(importance_traj, 50)
         original_traj = np.load('trajs_exp/KickAndDefend-v0_traj_{}.npz'.format(i))
         orin_reward = original_traj['final_rewards']
         print(orin_reward)
@@ -231,26 +231,26 @@ for k in range(2):
         replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo', 'zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10,
                                   render=False, exp_agent_id=0, mask_act=True)
+        replay_reward_20 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo', 'zoo'],
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_20,
+                                  render=False, exp_agent_id=0, mask_act=True)
         replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo', 'zoo'],
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_30,
                                   render=False, exp_agent_id=0, mask_act=True)
-        replay_reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo', 'zoo'],
-                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_50,
-                                  render=False, exp_agent_id=0, mask_act=True)
 
         diff_all_10[k, i] = np.abs(orin_reward-replay_reward_10)
+        diff_all_20[k, i] = np.abs(orin_reward-replay_reward_20)
         diff_all_30[k, i] = np.abs(orin_reward-replay_reward_30)
-        diff_all_50[k, i] = np.abs(orin_reward-replay_reward_50)
         importance_len_10[k, i] = len(importance_traj_10)
+        importance_len_20[k, i] = len(importance_traj_20)
         importance_len_30[k, i] = len(importance_traj_30)
-        importance_len_50[k, i] = len(importance_traj_50)
 
-np.savez('fid_dgp.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_50=diff_all_50,
-         len_10=importance_len_10, len_30=importance_len_30, len_50=importance_len_50, rewards=finals_all)
+np.savez('fid_dgp.npz', diff_10=diff_all_10, diff_20=diff_all_20, diff_30=diff_all_30,
+         len_10=importance_len_10, len_20=importance_len_20, len_30=importance_len_30, rewards=finals_all)
 
 print(np.sum(diff_all_10, 1))
+print(np.sum(diff_all_20, 1))
 print(np.sum(diff_all_30, 1))
-print(np.sum(diff_all_50, 1))
 
 
 # a1 = np.load('exp_results/fid_baselines.npz')['diff_10']

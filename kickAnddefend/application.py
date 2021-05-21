@@ -17,7 +17,7 @@ def run_exploration(budget, importance, num_trajs, num_step=3, fix_importance=Tr
     for i in range(num_trajs):
         original_traj = np.load('trajs_exp/KickAndDefend-v0_traj_{}.npz'.format(i))
         orin_reward = original_traj['final_rewards']
-        seed = int(original_traj['seeds'])
+        seed = int(original_traj['seed'])
         if orin_reward == 1:
             continue
         loss_seeds.append(seed)
@@ -158,7 +158,6 @@ def run_patch_traj(env, seed, model, obs_rms, obs_dict, act_dict, p, agent_type=
         if render: env.render()
         episode_length += 1
         if done:
-            assert reward != 0
             epr = reward
             break
     # print(episode_length)
@@ -317,7 +316,7 @@ exps_all = [dgp_2_sal, dgp_1_sal, sal_value, rudder_sal, saliency_sal, attn_sal,
 orin_reward_all = np.zeros((8, 500))
 reward_10_all = np.zeros((8, 500))
 reward_30_all = np.zeros((8, 500))
-reward_50_all = np.zeros((8, 500))
+reward_30_all = np.zeros((8, 500))
 for k in range(8):
     print(k)
     importance = exps_all[k]
@@ -338,21 +337,21 @@ for k in range(8):
                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:10,],
                                   render=False, exp_agent_id=0, mask_act=True)
 
-        reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:30,],
+        reward_20 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:20,],
                                   render=False, exp_agent_id=0, mask_act=True)
 
-        reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:50,],
+        reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:30,],
                                   render=False, exp_agent_id=0, mask_act=True)
         
         orin_reward_all[k, i] = orin_reward
         reward_10_all[k, i] = reward_10
+        reward_20_all[k, i] = reward_20
         reward_30_all[k, i] = reward_30
-        reward_50_all[k, i] = reward_50
 
 np.savez(save_path+'att_results.npz', orin_reward=orin_reward_all,
-         diff_10=reward_10_all, diff_30=reward_30_all, diff_50=reward_50_all)
+         diff_10=reward_10_all, diff_20=reward_20_all, diff_30=reward_30_all)
        
 att_results = np.load(save_path+'att_results.npz')
 total_trajs_num = 500
@@ -365,11 +364,11 @@ for k in range(8):
     win = np.where(att_results['diff_10'][k, ] == 1000)[0].shape[0]
     print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
 
+    win = np.where(att_results['diff_20'][k, ] == 1000)[0].shape[0]
+    print('Win rate 20: %.2f' % (100 * (win / total_trajs_num)))
+
     win = np.where(att_results['diff_30'][k, ] == 1000)[0].shape[0]
     print('Win rate 30: %.2f' % (100 * (win / total_trajs_num)))
-
-    win = np.where(att_results['diff_50'][k, ] == 1000)[0].shape[0]
-    print('Win rate 50: %.2f' % (100 * (win / total_trajs_num)))
 
 # Patch individual trajs and policy.
 def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, num_step, free_test=False, collect_dict=True):
@@ -431,7 +430,7 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, n
     print('===')
     if p == 0:
         p = 0.1
-
+    # p = 1.0
     num_rounds = 0
     results_1 = []
     results_p = []
@@ -489,5 +488,5 @@ sals = [dgp_1_sal, dgp_2_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency
 for k in range(6):
     patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=True,
                        collect_dict=True)
-    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=False,
-                       collect_dict=False)
+    # patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=False,
+    #                    collect_dict=False)
