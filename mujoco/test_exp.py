@@ -73,22 +73,22 @@ elif args.explainer == 'rudder':
       print('Std abs pred diff of the zero-one normalization: {}'.format(np.std(abs_all[0])))
 
       print('=============================================')
-      print('Mean fid of the top 5 normalization: {}'.format(np.mean(fid_all[1])))
-      print('Std fid of the top 5 normalization: {}'.format(np.std(fid_all[1])))
-      print('Mean abs pred diff of the top 5 normalization: {}'.format(np.mean(abs_all[1])))
-      print('Std abs pred diff of the top 5 normalization: {}'.format(np.std(abs_all[1])))
+      print('Mean fid of the top 10 normalization: {}'.format(np.mean(fid_all[1])))
+      print('Std fid of the top 10 normalization: {}'.format(np.std(fid_all[1])))
+      print('Mean abs pred diff of the top 10 normalization: {}'.format(np.mean(abs_all[1])))
+      print('Std abs pred diff of the top 10 normalization: {}'.format(np.std(abs_all[1])))
 
       print('=============================================')
-      print('Mean fid of the top 15 normalization: {}'.format(np.mean(fid_all[2])))
-      print('Std fid of the top 15 normalization: {}'.format(np.std(fid_all[2])))
-      print('Mean abs pred diff of the top 15 normalization: {}'.format(np.mean(abs_all[2])))
-      print('Std abs pred diff of the top 15 normalization: {}'.format(np.std(abs_all[2])))
+      print('Mean fid of the top 20 normalization: {}'.format(np.mean(fid_all[2])))
+      print('Std fid of the top 20 normalization: {}'.format(np.std(fid_all[2])))
+      print('Mean abs pred diff of the top 20 normalization: {}'.format(np.mean(abs_all[2])))
+      print('Std abs pred diff of the top 20 normalization: {}'.format(np.std(abs_all[2])))
 
       print('=============================================')
-      print('Mean fid of the top 25 normalization: {}'.format(np.mean(fid_all[3])))
-      print('Std fid of the top 25 normalization: {}'.format(np.std(fid_all[3])))
-      print('Mean abs pred diff of the top 25 normalization: {}'.format(np.mean(abs_all[3])))
-      print('Std abs pred diff of the top 25 normalization: {}'.format(np.std(abs_all[3])))
+      print('Mean fid of the top 30 normalization: {}'.format(np.mean(fid_all[3])))
+      print('Std fid of the top 30 normalization: {}'.format(np.std(fid_all[3])))
+      print('Mean abs pred diff of the top 30 normalization: {}'.format(np.mean(abs_all[3])))
+      print('Std abs pred diff of the top 30 normalization: {}'.format(np.std(abs_all[3])))
 
       print('=============================================')
       print('Mean stab: {}'.format(np.mean(stab_all)))
@@ -111,8 +111,46 @@ elif args.explainer == 'saliency':
       saliency_explainer.load(save_path + name + '_model.data')
       saliency_explainer.test(exp_idx, batch_size, traj_path)
 
-      sal_best, fid_best, stab_best, acc_best, abs_diff_best, time_best = saliency_explainer.exp_fid_stab(
-          exp_idx, batch_size, traj_path, False, 'integrated_gradient', n_samples=15, n_stab_samples=n_stab_samples)
+      all_methods = ['gradient', 'integrated_gradient', 'unifintgrad', 'smoothgrad', 'expgrad', 'vargrad']
+      fid_all_methods = []
+      for back2rnn in [True, False]:
+            for saliency_methond in all_methods:
+                  sal_saliency_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = saliency_explainer.exp_fid_stab(
+                        exp_idx, batch_size, traj_path, back2rnn, saliency_methond, n_samples=15,
+                        n_stab_samples=n_stab_samples)
+                  fid_all_methods.append(np.mean(fid_all))
+                  if back2rnn:
+                        np.savez_compressed(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz',
+                                            sal=sal_saliency_all, fid=fid_all, stab=stab_all, time=mean_time,
+                                            acc=acc_all,
+                                            abs_diff=abs_diff_all)
+                  else:
+                        np.savez_compressed(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz',
+                                            sal=sal_saliency_all, fid=fid_all, stab=stab_all, time=mean_time,
+                                            acc=acc_all,
+                                            abs_diff=abs_diff_all)
+      best_method_idx = np.argmin(fid_all_methods)
+      print('Best_method: {}'.format(best_method_idx))
+      if best_method_idx < 6:
+            saliency_methond = all_methods[best_method_idx]
+            sal_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['sal']
+            fid_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['fid']
+            stab_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['stab']
+            time_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['time']
+            acc_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['acc']
+            abs_diff_best = np.load(save_path + name + '_' + saliency_methond + '_exp_rnn_layer.npz')['abs_diff']
+      else:
+            saliency_methond = all_methods[best_method_idx - 6]
+            sal_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['sal']
+            fid_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['fid']
+            stab_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['stab']
+            time_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['time']
+            acc_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['acc']
+            abs_diff_best = np.load(save_path + name + '_' + saliency_methond + '_exp_input_layer.npz')['abs_diff']
+
+      np.savez_compressed(
+            save_path + name + '_exp_best.npz', sal=sal_best, fid=fid_best,
+            stab=stab_best, time=time_best, acc=acc_best, abs_diff=abs_diff_best)
 
       print('=============================================')
       print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_best[0])))
@@ -122,25 +160,25 @@ elif args.explainer == 'saliency':
       print('Std abs pred diff of the zero-one normalization: {}'.format(np.std(abs_diff_best[0])))
 
       print('=============================================')
-      print('Mean fid of the top 5 normalization: {}'.format(np.mean(fid_best[1])))
-      print('Std fid of the top 5 normalization: {}'.format(np.std(fid_best[1])))
-      print('Acc fid of the top 5 normalization: {}'.format(acc_best[1]))
-      print('Mean abs pred diff of the top 5 normalization: {}'.format(np.mean(abs_diff_best[1])))
-      print('Std abs pred diff of the top 5 normalization: {}'.format(np.std(abs_diff_best[1])))
+      print('Mean fid of the top 10 normalization: {}'.format(np.mean(fid_best[1])))
+      print('Std fid of the top 10 normalization: {}'.format(np.std(fid_best[1])))
+      print('Acc fid of the top 10 normalization: {}'.format(acc_best[1]))
+      print('Mean abs pred diff of the top 10 normalization: {}'.format(np.mean(abs_diff_best[1])))
+      print('Std abs pred diff of the top 10 normalization: {}'.format(np.std(abs_diff_best[1])))
 
       print('=============================================')
-      print('Mean fid of the top 15 normalization: {}'.format(np.mean(fid_best[2])))
-      print('Std fid of the top 15 normalization: {}'.format(np.std(fid_best[2])))
-      print('Acc fid of the top 15 normalization: {}'.format(acc_best[2]))
-      print('Mean abs pred diff of the top 15 normalization: {}'.format(np.mean(abs_diff_best[2])))
-      print('Std abs pred diff of the top 15 normalization: {}'.format(np.std(abs_diff_best[2])))
+      print('Mean fid of the top 20 normalization: {}'.format(np.mean(fid_best[2])))
+      print('Std fid of the top 20 normalization: {}'.format(np.std(fid_best[2])))
+      print('Acc fid of the top 20 normalization: {}'.format(acc_best[2]))
+      print('Mean abs pred diff of the top 20 normalization: {}'.format(np.mean(abs_diff_best[2])))
+      print('Std abs pred diff of the top 20 normalization: {}'.format(np.std(abs_diff_best[2])))
 
       print('=============================================')
-      print('Mean fid of the top 25 normalization: {}'.format(np.mean(fid_best[3])))
-      print('Std fid of the top 25 normalization: {}'.format(np.std(fid_best[3])))
-      print('Acc fid of the top 25 normalization: {}'.format(acc_best[3]))
-      print('Mean abs pred diff of the top 25 normalization: {}'.format(np.mean(abs_diff_best[3])))
-      print('Std abs pred diff of the top 25 normalization: {}'.format(np.std(abs_diff_best[3])))
+      print('Mean fid of the top 30 normalization: {}'.format(np.mean(fid_best[3])))
+      print('Std fid of the top 30 normalization: {}'.format(np.std(fid_best[3])))
+      print('Acc fid of the top 30 normalization: {}'.format(acc_best[3]))
+      print('Mean abs pred diff of the top 30 normalization: {}'.format(np.mean(abs_diff_best[3])))
+      print('Std abs pred diff of the top 30 normalization: {}'.format(np.std(abs_diff_best[3])))
 
       print('=============================================')
       print('Mean stab: {}'.format(np.mean(stab_best)))
@@ -176,25 +214,25 @@ elif args.explainer == 'attention':
       print('Std abs pred diff of the zero-one normalization: {}'.format(np.std(abs_diff_all[0])))
 
       print('=============================================')
-      print('Mean fid of the top 5 normalization: {}'.format(np.mean(fid_all[1])))
-      print('Std fid of the top 5 normalization: {}'.format(np.std(fid_all[1])))
-      print('Acc fid of the top 5 normalization: {}'.format(acc_all[1]))
-      print('Mean abs pred diff of the top 5 normalization: {}'.format(np.mean(abs_diff_all[1])))
-      print('Std abs pred diff of the top 5 normalization: {}'.format(np.std(abs_diff_all[1])))
+      print('Mean fid of the top 10 normalization: {}'.format(np.mean(fid_all[1])))
+      print('Std fid of the top 10 normalization: {}'.format(np.std(fid_all[1])))
+      print('Acc fid of the top 10 normalization: {}'.format(acc_all[1]))
+      print('Mean abs pred diff of the top 10 normalization: {}'.format(np.mean(abs_diff_all[1])))
+      print('Std abs pred diff of the top 10 normalization: {}'.format(np.std(abs_diff_all[1])))
 
       print('=============================================')
-      print('Mean fid of the top 15 normalization: {}'.format(np.mean(fid_all[2])))
-      print('Std fid of the top 15 normalization: {}'.format(np.std(fid_all[2])))
-      print('Acc fid of the top 15 normalization: {}'.format(acc_all[2]))
-      print('Mean abs pred diff of the top 15 normalization: {}'.format(np.mean(abs_diff_all[2])))
-      print('Std abs pred diff of the top 15 normalization: {}'.format(np.std(abs_diff_all[2])))
+      print('Mean fid of the top 20 normalization: {}'.format(np.mean(fid_all[2])))
+      print('Std fid of the top 20 normalization: {}'.format(np.std(fid_all[2])))
+      print('Acc fid of the top 20 normalization: {}'.format(acc_all[2]))
+      print('Mean abs pred diff of the top 20 normalization: {}'.format(np.mean(abs_diff_all[2])))
+      print('Std abs pred diff of the top 20 normalization: {}'.format(np.std(abs_diff_all[2])))
 
       print('=============================================')
-      print('Mean fid of the top 25 normalization: {}'.format(np.mean(fid_all[3])))
-      print('Std fid of the top 25 normalization: {}'.format(np.std(fid_all[3])))
-      print('Acc fid of the top 25 normalization: {}'.format(acc_all[3]))
-      print('Mean abs pred diff of the top 25 normalization: {}'.format(np.mean(abs_diff_all[3])))
-      print('Std abs pred diff of the top 25 normalization: {}'.format(np.std(abs_diff_all[3])))
+      print('Mean fid of the top 30 normalization: {}'.format(np.mean(fid_all[3])))
+      print('Std fid of the top 30 normalization: {}'.format(np.std(fid_all[3])))
+      print('Acc fid of the top 30 normalization: {}'.format(acc_all[3]))
+      print('Mean abs pred diff of the top 30 normalization: {}'.format(np.mean(abs_diff_all[3])))
+      print('Std abs pred diff of the top 30 normalization: {}'.format(np.std(abs_diff_all[3])))
 
       print('=============================================')
       print('Mean stab: {}'.format(np.mean(stab_all)))
@@ -230,25 +268,25 @@ elif args.explainer == 'rationale':
       print('Std abs pred diff of the zero-one normalization: {}'.format(np.std(abs_diff_all[0])))
 
       print('=============================================')
-      print('Mean fid of the top 5 normalization: {}'.format(np.mean(fid_all[1])))
-      print('Std fid of the top 5 normalization: {}'.format(np.std(fid_all[1])))
-      print('Acc fid of the top 5 normalization: {}'.format(acc_all[1]))
-      print('Mean abs pred diff of the top 5 normalization: {}'.format(np.mean(abs_diff_all[1])))
-      print('Std abs pred diff of the top 5 normalization: {}'.format(np.std(abs_diff_all[1])))
+      print('Mean fid of the top 10 normalization: {}'.format(np.mean(fid_all[1])))
+      print('Std fid of the top 10 normalization: {}'.format(np.std(fid_all[1])))
+      print('Acc fid of the top 10 normalization: {}'.format(acc_all[1]))
+      print('Mean abs pred diff of the top 10 normalization: {}'.format(np.mean(abs_diff_all[1])))
+      print('Std abs pred diff of the top 10 normalization: {}'.format(np.std(abs_diff_all[1])))
 
       print('=============================================')
-      print('Mean fid of the top 15 normalization: {}'.format(np.mean(fid_all[2])))
-      print('Std fid of the top 15 normalization: {}'.format(np.std(fid_all[2])))
-      print('Acc fid of the top 15 normalization: {}'.format(acc_all[2]))
-      print('Mean abs pred diff of the top 15 normalization: {}'.format(np.mean(abs_diff_all[2])))
-      print('Std abs pred diff of the top 15 normalization: {}'.format(np.std(abs_diff_all[2])))
+      print('Mean fid of the top 20 normalization: {}'.format(np.mean(fid_all[2])))
+      print('Std fid of the top 20 normalization: {}'.format(np.std(fid_all[2])))
+      print('Acc fid of the top 20 normalization: {}'.format(acc_all[2]))
+      print('Mean abs pred diff of the top 20 normalization: {}'.format(np.mean(abs_diff_all[2])))
+      print('Std abs pred diff of the top 20 normalization: {}'.format(np.std(abs_diff_all[2])))
 
       print('=============================================')
-      print('Mean fid of the top 25 normalization: {}'.format(np.mean(fid_all[3])))
-      print('Std fid of the top 25 normalization: {}'.format(np.std(fid_all[3])))
-      print('Acc fid of the top 25 normalization: {}'.format(acc_all[3]))
-      print('Mean abs pred diff of the top 25 normalization: {}'.format(np.mean(abs_diff_all[3])))
-      print('Std abs pred diff of the top 25 normalization: {}'.format(np.std(abs_diff_all[3])))
+      print('Mean fid of the top 30 normalization: {}'.format(np.mean(fid_all[3])))
+      print('Std fid of the top 30 normalization: {}'.format(np.std(fid_all[3])))
+      print('Acc fid of the top 30 normalization: {}'.format(acc_all[3]))
+      print('Mean abs pred diff of the top 30 normalization: {}'.format(np.mean(abs_diff_all[3])))
+      print('Std abs pred diff of the top 30 normalization: {}'.format(np.std(abs_diff_all[3])))
 
       print('=============================================')
       print('Mean stab: {}'.format(np.mean(stab_all)))
@@ -298,25 +336,25 @@ elif args.explainer == 'dgp':
       dgp_1_acc = dgp_1_fid_results['acc']
 
       print('=============================================')
-      print('Mean fid of the zero-one normalization: {}'.format(np.mean(dgp_1_fid[0])))
-      print('Std fid of the zero-one normalization: {}'.format(np.std(dgp_1_fid[0])))
-      print('Acc fid of the zero-one normalization: {}'.format(dgp_1_acc[0]))
-      print('Mean abs pred diff of the zero-one normalization: {}'.format(np.mean(dgp_1_diff[0])))
-      print('Std abs pred diff of the zero-one normalization: {}'.format(np.std(dgp_1_diff[0])))
+      print('Mean fid of the top 10 normalization: {}'.format(np.mean(dgp_1_fid[1])))
+      print('Std fid of the top 10 normalization: {}'.format(np.std(dgp_1_fid[1])))
+      print('Acc fid of the top 10 normalization: {}'.format(dgp_1_acc[1]))
+      print('Mean abs pred diff of the top 10 normalization: {}'.format(np.mean(dgp_1_diff[1])))
+      print('Std abs pred diff of the top 10 normalization: {}'.format(np.std(dgp_1_diff[1])))
 
       print('=============================================')
-      print('Mean fid of the top 5 normalization: {}'.format(np.mean(dgp_1_fid[1])))
-      print('Std fid of the top 5 normalization: {}'.format(np.std(dgp_1_fid[1])))
-      print('Acc fid of the top 5 normalization: {}'.format(dgp_1_acc[1]))
-      print('Mean abs pred diff of the top 5 normalization: {}'.format(np.mean(dgp_1_diff[1])))
-      print('Std abs pred diff of the top 5 normalization: {}'.format(np.std(dgp_1_diff[1])))
+      print('Mean fid of the top 20 normalization: {}'.format(np.mean(dgp_1_fid[2])))
+      print('Std fid of the top 20 normalization: {}'.format(np.std(dgp_1_fid[2])))
+      print('Acc fid of the top 20 normalization: {}'.format(dgp_1_acc[2]))
+      print('Mean abs pred diff of the top 20 normalization: {}'.format(np.mean(dgp_1_diff[2])))
+      print('Std abs pred diff of the top 20 normalization: {}'.format(np.std(dgp_1_diff[2])))
 
       print('=============================================')
-      print('Mean fid of the top 15 normalization: {}'.format(np.mean(dgp_1_fid[2])))
-      print('Std fid of the top 15 normalization: {}'.format(np.std(dgp_1_fid[2])))
-      print('Acc fid of the top 15 normalization: {}'.format(dgp_1_acc[2]))
-      print('Mean abs pred diff of the top 15 normalization: {}'.format(np.mean(dgp_1_diff[2])))
-      print('Std abs pred diff of the top 15 normalization: {}'.format(np.std(dgp_1_diff[2])))
+      print('Mean fid of the top 30 normalization: {}'.format(np.mean(dgp_1_fid[3])))
+      print('Std fid of the top 30 normalization: {}'.format(np.std(dgp_1_fid[3])))
+      print('Acc fid of the top 30 normalization: {}'.format(dgp_1_acc[3]))
+      print('Mean abs pred diff of the top 30 normalization: {}'.format(np.mean(dgp_1_diff[3])))
+      print('Std abs pred diff of the top 30 normalization: {}'.format(np.std(dgp_1_diff[3])))
 
       print('=============================================')
       print('Mean fid of the top 25 normalization: {}'.format(np.mean(dgp_1_fid[3])))
@@ -367,25 +405,32 @@ elif args.explainer == 'dgp':
       print('Std abs pred diff of the zero-one normalization: {}'.format(np.std(dgp_2_diff[0])))
 
       print('=============================================')
-      print('Mean fid of the top 5 normalization: {}'.format(np.mean(dgp_2_fid[1])))
-      print('Std fid of the top 5 normalization: {}'.format(np.std(dgp_2_fid[1])))
-      print('Acc fid of the top 5 normalization: {}'.format(dgp_2_acc[1]))
-      print('Mean abs pred diff of the top 5 normalization: {}'.format(np.mean(dgp_2_diff[1])))
-      print('Std abs pred diff of the top 5 normalization: {}'.format(np.std(dgp_2_diff[1])))
+      print('Mean fid of the zero-one normalization: {}'.format(np.mean(dgp_2_fid[0])))
+      print('Std fid of the zero-one normalization: {}'.format(np.std(dgp_2_fid[0])))
+      print('Acc fid of the zero-one normalization: {}'.format(dgp_2_acc[0]))
+      print('Mean abs pred diff of the zero-one normalization: {}'.format(np.mean(dgp_2_diff[0])))
+      print('Std abs pred diff of the zero-one normalization: {}'.format(np.std(dgp_2_diff[0])))
 
       print('=============================================')
-      print('Mean fid of the top 15 normalization: {}'.format(np.mean(dgp_2_fid[2])))
-      print('Std fid of the top 15 normalization: {}'.format(np.std(dgp_2_fid[2])))
-      print('Acc fid of the top 15 normalization: {}'.format(dgp_2_acc[2]))
-      print('Mean abs pred diff of the top 15 normalization: {}'.format(np.mean(dgp_2_diff[2])))
-      print('Std abs pred diff of the top 15 normalization: {}'.format(np.std(dgp_2_diff[2])))
+      print('Mean fid of the top 10 normalization: {}'.format(np.mean(dgp_2_fid[1])))
+      print('Std fid of the top 10 normalization: {}'.format(np.std(dgp_2_fid[1])))
+      print('Acc fid of the top 10 normalization: {}'.format(dgp_2_acc[1]))
+      print('Mean abs pred diff of the top 10 normalization: {}'.format(np.mean(dgp_2_diff[1])))
+      print('Std abs pred diff of the top 10 normalization: {}'.format(np.std(dgp_2_diff[1])))
 
       print('=============================================')
-      print('Mean fid of the top 25 normalization: {}'.format(np.mean(dgp_2_fid[3])))
-      print('Std fid of the top 25 normalization: {}'.format(np.std(dgp_2_fid[3])))
-      print('Acc fid of the top 25 normalization: {}'.format(dgp_2_acc[3]))
-      print('Mean abs pred diff of the top 25 normalization: {}'.format(np.mean(dgp_2_diff[3])))
-      print('Std abs pred diff of the top 25 normalization: {}'.format(np.std(dgp_2_diff[3])))
+      print('Mean fid of the top 20 normalization: {}'.format(np.mean(dgp_2_fid[2])))
+      print('Std fid of the top 20 normalization: {}'.format(np.std(dgp_2_fid[2])))
+      print('Acc fid of the top 20 normalization: {}'.format(dgp_2_acc[2]))
+      print('Mean abs pred diff of the top 20 normalization: {}'.format(np.mean(dgp_2_diff[2])))
+      print('Std abs pred diff of the top 20 normalization: {}'.format(np.std(dgp_2_diff[2])))
+
+      print('=============================================')
+      print('Mean fid of the top 30 normalization: {}'.format(np.mean(dgp_2_fid[3])))
+      print('Std fid of the top 30 normalization: {}'.format(np.std(dgp_2_fid[3])))
+      print('Acc fid of the top 30 normalization: {}'.format(dgp_2_acc[3]))
+      print('Mean abs pred diff of the top 30 normalization: {}'.format(np.mean(dgp_2_diff[3])))
+      print('Std abs pred diff of the top 30 normalization: {}'.format(np.std(dgp_2_diff[3])))
 
       print('=============================================')
       print('Mean stab: {}'.format(np.mean(dgp_2_stab)))
@@ -431,25 +476,25 @@ elif args.explainer == 'dgp':
       print('Std abs pred diff of the zero-one normalization: {}'.format(np.std(dgp_3_diff[0])))
 
       print('=============================================')
-      print('Mean fid of the top 5 normalization: {}'.format(np.mean(dgp_3_fid[1])))
-      print('Std fid of the top 5 normalization: {}'.format(np.std(dgp_3_fid[1])))
-      print('Acc fid of the top 5 normalization: {}'.format(dgp_3_acc[1]))
-      print('Mean abs pred diff of the top 5 normalization: {}'.format(np.mean(dgp_3_diff[1])))
-      print('Std abs pred diff of the top 5 normalization: {}'.format(np.std(dgp_3_diff[1])))
+      print('Mean fid of the top 10 normalization: {}'.format(np.mean(dgp_3_fid[1])))
+      print('Std fid of the top 10 normalization: {}'.format(np.std(dgp_3_fid[1])))
+      print('Acc fid of the top 10 normalization: {}'.format(dgp_3_acc[1]))
+      print('Mean abs pred diff of the top 10 normalization: {}'.format(np.mean(dgp_3_diff[1])))
+      print('Std abs pred diff of the top 10 normalization: {}'.format(np.std(dgp_3_diff[1])))
 
       print('=============================================')
-      print('Mean fid of the top 15 normalization: {}'.format(np.mean(dgp_3_fid[2])))
-      print('Std fid of the top 15 normalization: {}'.format(np.std(dgp_3_fid[2])))
-      print('Acc fid of the top 15 normalization: {}'.format(dgp_3_acc[2]))
-      print('Mean abs pred diff of the top 15 normalization: {}'.format(np.mean(dgp_3_diff[2])))
-      print('Std abs pred diff of the top 15 normalization: {}'.format(np.std(dgp_3_diff[2])))
+      print('Mean fid of the top 20 normalization: {}'.format(np.mean(dgp_3_fid[2])))
+      print('Std fid of the top 20 normalization: {}'.format(np.std(dgp_3_fid[2])))
+      print('Acc fid of the top 20 normalization: {}'.format(dgp_3_acc[2]))
+      print('Mean abs pred diff of the top 20 normalization: {}'.format(np.mean(dgp_3_diff[2])))
+      print('Std abs pred diff of the top 20 normalization: {}'.format(np.std(dgp_3_diff[2])))
 
       print('=============================================')
-      print('Mean fid of the top 25 normalization: {}'.format(np.mean(dgp_3_fid[3])))
-      print('Std fid of the top 25 normalization: {}'.format(np.std(dgp_3_fid[3])))
-      print('Acc fid of the top 25 normalization: {}'.format(dgp_3_acc[3]))
-      print('Mean abs pred diff of the top 25 normalization: {}'.format(np.mean(dgp_3_diff[3])))
-      print('Std abs pred diff of the top 25 normalization: {}'.format(np.std(dgp_3_diff[3])))
+      print('Mean fid of the top 30 normalization: {}'.format(np.mean(dgp_3_fid[3])))
+      print('Std fid of the top 30 normalization: {}'.format(np.std(dgp_3_fid[3])))
+      print('Acc fid of the top 30 normalization: {}'.format(dgp_3_acc[3]))
+      print('Mean abs pred diff of the top 30 normalization: {}'.format(np.mean(dgp_3_diff[3])))
+      print('Std abs pred diff of the top 30 normalization: {}'.format(np.std(dgp_3_diff[3])))
 
       print('=============================================')
       print('Mean stab: {}'.format(np.mean(dgp_3_stab)))

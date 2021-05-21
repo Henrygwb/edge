@@ -886,8 +886,8 @@ class RnnSaliency(object):
             if self.likelihood_type == 'classification':
                 fid_1, acc_1_temp, abs_diff_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal, preds_orin)
                 fid_2, acc_2_temp, abs_diff_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.05))
-                fid_3, acc_3_temp, abs_diff_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.15))
-                fid_4, acc_4_temp, abs_diff_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.25))
+                fid_3, acc_3_temp, abs_diff_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.10))
+                fid_4, acc_4_temp, abs_diff_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.15))
                 acc_1 += acc_1_temp
                 acc_2 += acc_2_temp
                 acc_3 += acc_3_temp
@@ -895,8 +895,8 @@ class RnnSaliency(object):
             else:
                 fid_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal, preds_orin)
                 fid_2 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.05))
-                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.15))
-                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.25))
+                fid_3 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.10))
+                fid_4 = exp_fid2nn_topk(obs, acts, rewards, self, sal, preds_orin, int(obs.shape[1]*0.15))
 
             stab = self.exp_stablity(obs, acts, rewards, sal, back2rnn, saliency_method, n_samples, n_stab_samples, eps)
             fid = np.concatenate((fid_1[None,], fid_2[None,], fid_3[None,], fid_4[None,]))

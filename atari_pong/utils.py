@@ -148,7 +148,7 @@ def rl_fed(env_name, seed, model, original_traj, importance, max_ep_len=1e3, ren
     state = torch.tensor(prepro(obs_0))
     hx, cx = Variable(torch.zeros(1, 256)), Variable(torch.zeros(1, 256))
     act_set = np.array([0, 1, 2, 3, 4, 5])
-    for i in range(traj_len):
+    for i in range(traj_len+200):
         # Steps before the important steps reproduce original traj.
         action = acts_orin[start_step+i] - 1
         value, logit, (hx, cx) = model((Variable(state.view(1, 1, 80, 80)), (hx, cx)))

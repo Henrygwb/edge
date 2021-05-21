@@ -337,14 +337,14 @@ dgp_1_sal = dgp_1_fid_results['sal']
 exps_all = [dgp_1_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
 orin_reward_all = np.zeros((6, 500))
 reward_10_all = np.zeros((6, 500))
+reward_20_all = np.zeros((6, 500))
 reward_30_all = np.zeros((6, 500))
-reward_50_all = np.zeros((6, 500))
 for k in range(6):
     print(k)
     importance = exps_all[k]
     for i in range(500):
         if i % 100 ==0: print(i)
-        if k == 2:
+        if k == 3:
             importance_traj = np.arange(max_ep_len)
             np.random.shuffle(importance_traj)
         else:
@@ -359,37 +359,37 @@ for k in range(6):
                                    max_ep_len=max_ep_len, importance=importance_traj[0:10,], render=False,
                                    mask_act=True)
 
+        reward_20 = rl_attack_traj(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
+                                   max_ep_len=max_ep_len, importance=importance_traj[0:20,], render=False,
+                                   mask_act=True)
+
         reward_30 = rl_attack_traj(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
                                    max_ep_len=max_ep_len, importance=importance_traj[0:30,], render=False,
                                    mask_act=True)
 
-        reward_50 = rl_attack_traj(env_name=env_name, seed=seed, model=model, original_traj=original_traj,
-                                   max_ep_len=max_ep_len, importance=importance_traj[0:50,], render=False,
-                                   mask_act=True)
-
         orin_reward_all[k, i] = orin_reward
         reward_10_all[k, i] = reward_10
+        reward_20_all[k, i] = reward_20
         reward_30_all[k, i] = reward_30
-        reward_50_all[k, i] = reward_50
 
 np.savez(save_path+'att_results.npz', orin_reward=orin_reward_all,
-         diff_10=reward_10_all, diff_30=reward_30_all, diff_50=reward_50_all)
+         diff_10=reward_10_all, diff_20=reward_20_all, diff_30=reward_30_all)
 
 att_results = np.load(save_path+'att_results.npz')
 total_trajs_num = 500
 for k in range(6):
     print('======================')
     print(str(k))
-    win = np.where(orin_reward_all[k, ] == 0)[0].shape[0]
+    win = np.where(att_results['orin_reward'][k, ] == 1)[0].shape[0]
+    print('Original win rate: %.2f' % (100 * (win / total_trajs_num)))
+
+    win = np.where(att_results['diff_10'][k, ] == 1)[0].shape[0]
     print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
 
-    win = np.where(reward_10_all[k, ] == 0)[0].shape[0]
-    print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
-
-    win = np.where(reward_30_all[k, ] == 0)[0].shape[0]
+    win = np.where(att_results['diff_30'][k, ] == 1)[0].shape[0]
     print('Win rate 30: %.2f' % (100 * (win / total_trajs_num)))
 
-    win = np.where(reward_50_all[k, ] == 0)[0].shape[0]
+    win = np.where(att_results['diff_50'][k, ] == 1)[0].shape[0]
     print('Win rate 50: %.2f' % (100 * (win / total_trajs_num)))
 
 
