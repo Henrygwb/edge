@@ -434,13 +434,13 @@ class Rudder(object):
             if task_type == 'classification':
                 abs_diff_1, fid_1 = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder, preds_orin)
                 abs_diff_2, fid_2 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.05))
-                abs_diff_3, fid_3 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.15))
-                abs_diff_4, fid_4 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.25))
+                abs_diff_3, fid_3 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.10))
+                abs_diff_4, fid_4 = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.15))
             else:
                 fid_1, _ = self.exp_fid2nn_zero_one(obs, acts, rewards, self, sal_rudder, preds_orin)
                 fid_2, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.05))
-                fid_3, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.15))
-                fid_4, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.25))
+                fid_3, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.10))
+                fid_4, _ = self.exp_fid2nn_topk(obs, acts, rewards, self, sal_rudder, preds_orin, int(obs.shape[1] * 0.15))
 
             stab = exp_stablity(obs, acts, rewards, self, sal_rudder, n_stab_sample, eps)
             fid = np.concatenate((fid_1[None, ], fid_2[None, ], fid_3[None, ], fid_4[None, ]))

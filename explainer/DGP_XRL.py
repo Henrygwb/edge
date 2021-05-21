@@ -763,9 +763,9 @@ class DGPXRL(object):
                 fid_2, acc_2_temp, abs_diff_2 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin,
                                                                      int(obs.shape[1] * 0.05))
                 fid_3, acc_3_temp, abs_diff_3 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin,
-                                                                     int(obs.shape[1] * 0.15))
+                                                                     int(obs.shape[1] * 0.10))
                 fid_4, acc_4_temp, abs_diff_4 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin,
-                                                                     int(obs.shape[1] * 0.25))
+                                                                     int(obs.shape[1] * 0.15))
                 acc_1 += acc_1_temp
                 acc_2 += acc_2_temp
                 acc_3 += acc_3_temp
@@ -773,8 +773,8 @@ class DGPXRL(object):
             else:
                 fid_1 = exp_fid2nn_zero_one(obs, acts, rewards, self, sal, preds_orin)
                 fid_2 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin, int(obs.shape[1] * 0.05))
-                fid_3 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin, int(obs.shape[1] * 0.15))
-                fid_4 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin, int(obs.shape[1] * 0.25))
+                fid_3 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin, int(obs.shape[1] * 0.10))
+                fid_4 = self.exp_fid2nn_topk(obs, acts, rewards, sal, preds_orin, int(obs.shape[1] * 0.15))
 
             stab = self.exp_stablity(obs, acts, rewards, sal, n_stab_samples, eps)
             fid = np.concatenate((fid_1[None,], fid_2[None,], fid_3[None,], fid_4[None,]))

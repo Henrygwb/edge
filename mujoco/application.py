@@ -310,8 +310,8 @@ dgp_2_sal = dgp_2_fid_results['sal']
 exps_all = [dgp_2_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal, 0]
 orin_reward_all = np.zeros((7, 500))
 reward_10_all = np.zeros((7, 500))
+reward_20_all = np.zeros((7, 500))
 reward_30_all = np.zeros((7, 500))
-reward_50_all = np.zeros((7, 500))
 for k in range(7):
     print(k)
     importance = exps_all[k]
@@ -332,21 +332,21 @@ for k in range(7):
                            original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:10,],
                            render=False, mask_act=True)
 
+        reward_20 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                           original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:20,],
+                           render=False, mask_act=True)
+
         reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
                            original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:30,],
                            render=False, mask_act=True)
 
-        reward_50 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                           original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj[0:50,],
-                           render=False, mask_act=True)
-
         orin_reward_all[k, i] = orin_reward
         reward_10_all[k, i] = reward_10
+        reward_20_all[k, i] = reward_20
         reward_30_all[k, i] = reward_30
-        reward_50_all[k, i] = reward_50
 
 np.savez(save_path+'att_results.npz', orin_reward=orin_reward_all,
-         diff_10=reward_10_all, diff_30=reward_30_all, diff_50=reward_50_all)
+         diff_10=reward_10_all, diff_20=reward_20_all, diff_30=reward_30_all)
 
 att_results = np.load(save_path+'att_results.npz')
 total_trajs_num = 500
@@ -360,10 +360,10 @@ for k in range(7):
     print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
 
     win = np.where(att_results['diff_30'][k, ] == 1000)[0].shape[0]
-    print('Win rate 30: %.2f' % (100 * (win / total_trajs_num)))
+    print('Win rate 20: %.2f' % (100 * (win / total_trajs_num)))
 
     win = np.where(att_results['diff_50'][k, ] == 1000)[0].shape[0]
-    print('Win rate 50: %.2f' % (100 * (win / total_trajs_num)))
+    print('Win rate 30: %.2f' % (100 * (win / total_trajs_num)))
 
 
 # Patch individual trajs and policy.
