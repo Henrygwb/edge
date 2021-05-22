@@ -149,8 +149,10 @@ def rl_fed(env_name, seed, model, original_traj, importance, max_ep_len=1e3, ren
     hx, cx = Variable(torch.zeros(1, 256)), Variable(torch.zeros(1, 256))
     act_set = np.array([0, 1, 2, 3, 4, 5])
     for i in range(traj_len+200):
+        if epr !=0:
+           break
         # Steps before the important steps reproduce original traj.
-        action = acts_orin[start_step+i] - 1
+        # action = acts_orin[start_step+i] - 1
         value, logit, (hx, cx) = model((Variable(state.view(1, 1, 80, 80)), (hx, cx)))
         hx, cx = Variable(hx.data), Variable(cx.data)
         prob = F.softmax(logit, dim=-1)
@@ -161,7 +163,7 @@ def rl_fed(env_name, seed, model, original_traj, importance, max_ep_len=1e3, ren
                 act_set_1 = act_set[act_set!=action_model]
                 action = np.random.choice(act_set_1)
             # Steps after the important steps take optimal actions.
-            if start_step+1 > importance[-1]:
+            else:
                 action = action_model
         obs, reward, done, expert_policy = env.step(action)
         state = torch.tensor(prepro(obs))
