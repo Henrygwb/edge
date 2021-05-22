@@ -205,12 +205,12 @@ def draw_fid_fig_t(fid_data, explainers, metrics, save_path, box_plot=True, log_
     pp.close()
 
 
-def compute_rl_fid(diff, len, diff_max, len_max=200, eps=0.001):
+def compute_rl_fid(diff, len, diff_max, len_max=200, eps=0.001, weight=1):
     diff = diff / diff_max
     len = len / len_max
     diff[diff == 0] =eps
     len[len == 0] =eps
     diff_log = np.log(diff)
     len_log = np.log(len)
-    return len_log - diff_log
+    return len_log - weight*diff_log
 

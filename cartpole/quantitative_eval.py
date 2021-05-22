@@ -3,10 +3,10 @@ sys.path.append('..')
 os.environ["CUDA_VISIBLE_DEVICES"] = " "
 import gym
 import numpy as np
-from utils import rl_fed
+# from utils import rl_fed
 from explainer.quantitative_test import truncate_importance, draw_fid_fig, draw_stab_fig, draw_fid_fig_t, compute_rl_fid
-from stable_baselines import PPO2
-from stable_baselines.common import make_vec_env
+# from stable_baselines import PPO2
+# from stable_baselines.common import make_vec_env
 
 
 encoder_type = 'MLP'
@@ -110,7 +110,7 @@ dgp_2_stab = dgp_2_fid_results['stab']
 # draw_fid_fig(fid_all, explainer_all, metrics_all, save_stab_path, box_plot=False, log_scale=False)
 
 # Fid RL.fig
-
+"""
 env_name = 'CartPole-v1'
 max_ep_len = 200
 agent_path = './agents/ppo2_cartpole.zip'
@@ -242,49 +242,39 @@ a1 = np.load('exp_results/fid_baselines.npz')['diff_10']
 b1 = np.load('exp_results/fid_dgp.npz')['diff_10']
 diff_10 = np.vstack((a1, b1))
 
-a2 = np.load('exp_results/fid_baselines.npz')['diff_30']
-b2 = np.load('exp_results/fid_dgp.npz')['diff_30']
-diff_30 = np.vstack((a2, b2))
+a2 = np.load('exp_results/fid_baselines.npz')['diff_20']
+b2 = np.load('exp_results/fid_dgp.npz')['diff_20']
+diff_20 = np.vstack((a2, b2))
 
-a3 = np.load('exp_results/fid_baselines.npz')['diff_50']
-b3 = np.load('exp_results/fid_dgp.npz')['diff_50']
-diff_50 = np.vstack((a3, b3))
+a3 = np.load('exp_results/fid_baselines.npz')['diff_30']
+b3 = np.load('exp_results/fid_dgp.npz')['diff_30']
+diff_30 = np.vstack((a3, b3))
 
 a1 = np.load('exp_results/fid_baselines.npz')['len_10']
 b1 = np.load('exp_results/fid_dgp.npz')['len_10']
 len_10 = np.vstack((a1, b1))
 
-a2 = np.load('exp_results/fid_baselines.npz')['len_30']
-b2 = np.load('exp_results/fid_dgp.npz')['len_30']
-len_30 = np.vstack((a2, b2))
+a2 = np.load('exp_results/fid_baselines.npz')['len_20']
+b2 = np.load('exp_results/fid_dgp.npz')['len_20']
+len_20 = np.vstack((a2, b2))
 
-a3 = np.load('exp_results/fid_baselines.npz')['len_50']
-b3 = np.load('exp_results/fid_dgp.npz')['len_50']
-len_50 = np.vstack((a3, b3))
+a3 = np.load('exp_results/fid_baselines.npz')['len_30']
+b3 = np.load('exp_results/fid_dgp.npz')['len_30']
+len_30 = np.vstack((a3, b3))
 
 # Reward diff and explanation len figures
-# explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our_1', 'Our_2']
-# metrics_all = ['Top5', 'Top15', 'Top25']
-#
-# diff_all = np.vstack((diff_10[None, ...], diff_30[None, ...], diff_50[None,  ...]))
-# draw_fid_fig_t(diff_all, explainer_all, metrics_all, save_path+'rl_fid_diff_bar.pdf', box_plot=False, log_scale=False)
-# draw_fid_fig_t(diff_all, explainer_all, metrics_all, save_path+'rl_fid_diff_box.pdf', box_plot=True, log_scale=False)
-#
-# len_all = np.vstack((len_10[None, ...], len_30[None, ...], len_50[None,  ...]))
-# draw_fid_fig_t(len_all, explainer_all, metrics_all, save_path+'rl_fid_len_bar.pdf', box_plot=False, log_scale=False)
-# draw_fid_fig_t(len_all, explainer_all, metrics_all, save_path+'rl_fid_len_box.pdf', box_plot=True, log_scale=False)
 
 eps = 0.001
-rl_fid_10 = compute_rl_fid(diff_10, len_10, diff_max=192.0, eps=eps)
-rl_fid_30 = compute_rl_fid(diff_30, len_30, diff_max=192.0, eps=eps)
-rl_fid_50 = compute_rl_fid(diff_50, len_50, diff_max=192.0, eps=eps)
+rl_fid_10 = compute_rl_fid(diff_10, len_10, diff_max=192.0, eps=eps, weight=2)
+rl_fid_20 = compute_rl_fid(diff_20, len_20, diff_max=192.0, eps=eps, weight=2)
+rl_fid_30 = compute_rl_fid(diff_30, len_30, diff_max=192.0, eps=eps, weight=2)
 
 print(np.mean(rl_fid_10, 1))
 print(np.std(rl_fid_10, 1))
+print(np.mean(rl_fid_20, 1))
+print(np.std(rl_fid_20, 1))
 print(np.mean(rl_fid_30, 1))
 print(np.std(rl_fid_30, 1))
-print(np.mean(rl_fid_50, 1))
-print(np.std(rl_fid_50, 1))
 
 
 explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our_1', 'Our_2']
@@ -301,4 +291,4 @@ explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
 metrics_all = ['Top5', 'Top15', 'Top25']
 draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'figures_x_l1/rl_fid_bar.pdf',
                box_plot=False, log_scale=False)
-"""
+
