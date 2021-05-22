@@ -43,7 +43,7 @@ seq_len = int(np.load(traj_path + '_max_length.npy'))
 input_dim = 80
 n_action = 7
 len_diff = max_ep_len - seq_len
-total_data_idx = np.arange(int(np.load(traj_path + '_num_traj.npy'))) # np.arange(30)
+total_data_idx = np.arange(int(np.load(traj_path + '_num_traj.npy')))
 train_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0]*0.7):, ]
 exp_idx = total_data_idx[0:int(total_data_idx.shape[0]*0.5), ]
@@ -189,7 +189,7 @@ elif args.explainer == 'dgp':
     using_sor = False # Whether to use SoR approximation, not applicable for KSI and CIQ.
     using_OrthogonallyDecouple = False # Using together NGD may cause numerical issue.
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
-    weight_x = False
+    weight_x = True
     logit = True
     lambda_1 = 0.01
     local_samples = 10
@@ -220,7 +220,49 @@ elif args.explainer == 'dgp':
     sal_rationale_all, covar_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = dgp_explainer.exp_fid_stab(
         exp_idx, batch_size, traj_path, logit=logit, n_stab_samples=n_stab_samples)
 
-
     np.savez_compressed(save_path+name+'_exp.npz', sal=sal_rationale_all, fid=fid_all, stab=stab_all, time=mean_time,
                         acc=acc_all, full_covar=covar_all[0], traj_cova=covar_all[1], step_covar=covar_all[2],
                         abs_diff=abs_diff_all)
+
+    dgp_3_fid_results = np.load(save_path+name+'_exp.npz')
+    dgp_3_sal = dgp_3_fid_results['sal']
+    dgp_3_fid = dgp_3_fid_results['fid']
+    dgp_3_stab = dgp_3_fid_results['stab']
+    dgp_3_diff = dgp_3_fid_results['abs_diff']
+    dgp_3_time = dgp_3_fid_results['time']
+    dgp_3_acc = dgp_3_fid_results['acc']
+
+    print('=============================================')
+    print('Mean fid of the zero-one normalization: {}'.format(np.mean(dgp_3_fid[0])))
+    print('Std fid of the zero-one normalization: {}'.format(np.std(dgp_3_fid[0])))
+    print('Acc fid of the zero-one normalization: {}'.format(dgp_3_acc[0]))
+    print('Mean abs pred diff of the zero-one normalization: {}'.format(np.mean(dgp_3_diff[0])))
+    print('Std abs pred diff of the zero-one normalization: {}'.format(np.std(dgp_3_diff[0])))
+
+    print('=============================================')
+    print('Mean fid of the top 10 normalization: {}'.format(np.mean(dgp_3_fid[1])))
+    print('Std fid of the top 10 normalization: {}'.format(np.std(dgp_3_fid[1])))
+    print('Acc fid of the top 10 normalization: {}'.format(dgp_3_acc[1]))
+    print('Mean abs pred diff of the top 10 normalization: {}'.format(np.mean(dgp_3_diff[1])))
+    print('Std abs pred diff of the top 10 normalization: {}'.format(np.std(dgp_3_diff[1])))
+
+    print('=============================================')
+    print('Mean fid of the top 20 normalization: {}'.format(np.mean(dgp_3_fid[2])))
+    print('Std fid of the top 20 normalization: {}'.format(np.std(dgp_3_fid[2])))
+    print('Acc fid of the top 20 normalization: {}'.format(dgp_3_acc[2]))
+    print('Mean abs pred diff of the top 20 normalization: {}'.format(np.mean(dgp_3_diff[2])))
+    print('Std abs pred diff of the top 20 normalization: {}'.format(np.std(dgp_3_diff[2])))
+
+    print('=============================================')
+    print('Mean fid of the top 30 normalization: {}'.format(np.mean(dgp_3_fid[3])))
+    print('Std fid of the top 30 normalization: {}'.format(np.std(dgp_3_fid[3])))
+    print('Acc fid of the top 30 normalization: {}'.format(dgp_3_acc[3]))
+    print('Mean abs pred diff of the top 30 normalization: {}'.format(np.mean(dgp_3_diff[3])))
+    print('Std abs pred diff of the top 30 normalization: {}'.format(np.std(dgp_3_diff[3])))
+
+    print('=============================================')
+    print('Mean stab: {}'.format(np.mean(dgp_3_stab)))
+    print('Std stab: {}'.format(np.std(dgp_3_stab)))
+
+    print('=============================================')
+    print('Mean exp time: {}'.format(dgp_3_time))

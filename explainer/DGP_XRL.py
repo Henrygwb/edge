@@ -287,7 +287,13 @@ class DGPXRL(object):
 
                         self.likelihood_regular_optimizer.zero_grad()
                         if self.weight_x:
-                            local_linear_loss = 0
+                            output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
+                            features_sum = features.detach().sum(-1)
+                            weight_output = self.likelihood.weight_encoder(features_sum)
+                            lasso_term = torch.norm(weight_output, p=1) # lasso
+                            lasso_term.backward()
+                            loss_reg_sum += lasso_term
+                            # local_linear_loss = 0
                             # output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
                             # features_sum = features.detach().sum(-1)
                             # weight_output = self.likelihood.weight_encoder(features_sum)
@@ -342,8 +348,8 @@ class DGPXRL(object):
                 self.scheduler_hyperparameter.step()
 
             self.scheduler.step()
-            if not self.weight_x:
-                self.scheduler_regular.step()
+            # if not self.weight_x:
+            self.scheduler_regular.step()
             # self.test(test_idx, batch_size, traj_path)
             # self.model.train()
             # self.likelihood.train()
