@@ -5,7 +5,7 @@ import gym
 import numpy as np
 import gym_compete
 from mujoco.utils import rl_fed, load_agent, load_from_file
-from explainer.quantitative_test import truncate_importance, draw_fid_fig, draw_stab_fig, draw_fid_fig_t, compute_rl_fid
+from explainer.quantitative_test import truncate_importance #, draw_fid_fig, draw_stab_fig, draw_fid_fig_t, compute_rl_fid
 
 
 encoder_type = 'MLP'
@@ -248,8 +248,8 @@ for k in range(3):
         diff_all_20[k, i] = np.abs(orin_reward-replay_reward_20)
         diff_all_30[k, i] = np.abs(orin_reward-replay_reward_30)
         importance_len_10[k, i] = len(importance_traj_10)
-        importance_len_30[k, i] = len(importance_traj_20)
-        importance_len_50[k, i] = len(importance_traj_30)
+        importance_len_20[k, i] = len(importance_traj_20)
+        importance_len_30[k, i] = len(importance_traj_30)
 
 np.savez('fid_dgp.npz', diff_10=diff_all_10, diff_30=diff_all_30, diff_20=diff_all_20,
          len_10=importance_len_10, len_30=importance_len_30, len_20=importance_len_20, rewards=finals_all)
