@@ -18,7 +18,7 @@ args = parser.parse_args()
 env_name = 'KickAndDefend-v0'
 agent_path = 'agents/{}/'.format(env_name.lower())
 traj_path = 'trajs_exp/' + env_name
-num_traj = 4100
+num_traj = 2000
 max_ep_len = 200
 
 # Get the shared parameters, prepare training/testing data.
