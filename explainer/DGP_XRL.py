@@ -286,7 +286,7 @@ class DGPXRL(object):
                         loss_sum += loss.item()
 
                         self.likelihood_regular_optimizer.zero_grad()
-                        if self.weight_x:
+                        if self.weight_x and self.likelihood_type == 'classification':
                             output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
                             features_sum = features.detach().sum(-1)
                             weight_output = self.likelihood.weight_encoder(features_sum)
