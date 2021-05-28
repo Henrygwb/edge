@@ -894,15 +894,20 @@ class DGPXRL(object):
         else:
             mean = f_predicted.mean.cpu().detach()
             mean = mean.view(rewards.shape[0], obs.shape[1])
-            mean_bias = self.likelihood.weight_encoder(features).squeeze(-1)
+            mean_bias = self.likelihood.weight_encoder(features)#.squeeze(-1)
             mean_bias = mean_bias.cpu().detach()
             mixing_weights = self.likelihood.mixing_weights.cpu().detach()
             mixing_weights = mixing_weights.t()
             mixing_weights = mixing_weights.repeat(rewards.shape[0], 1, 1)
             for i in range(rewards.shape[0]):
                 mixing_weights[i, nonimportance_id[i], 0] = 0 # maybe no need to select the last dim.
+
+            """
+            Old model with input-dependent bias
             mean = mean + mean_bias
             output = torch.einsum('xy, xyk->xk', (mean, mixing_weights)) # num_classes x num_data
+            """
+            output = torch.einsum('xy, xyk->xk', (mean, mixing_weights)) + mean_bias# num_classes x num_data
             preds = output.flatten()
 
         preds = preds.cpu().detach().numpy()
