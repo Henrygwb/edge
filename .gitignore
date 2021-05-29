@@ -7,4 +7,3 @@ logs/
 __pycache__/
 explainer/ref_code/
 figures/outputs
-pendulum/models/
