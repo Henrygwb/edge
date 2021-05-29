@@ -84,6 +84,7 @@ class DGPXRL(object):
         :param using_sor: Whether to use SoR approximation, not applicable for KSI and CIQ.
         :param using_OrthogonallyDecouple
         :param weight_x: whether the mixing weights depend on inputs.
+        :param lambda_1: coefficient before the lasso/local linear regularization (here we time it to lr).
         """
         self.len_diff = len_diff
         self.train_len = train_len
@@ -172,7 +173,7 @@ class DGPXRL(object):
                                                             gamma=self.gamma)
 
         self.likelihood_regular_optimizer = optim.Adam([{'params': self.likelihood.parameters()}],
-                                                       lr=self.lr * lambda_1, weight_decay=0)
+                                                       lr=self.lr * lambda_1, weight_decay=0) # penalize the lr with lambda_1.
 
         self.scheduler_regular = optim.lr_scheduler.MultiStepLR(self.likelihood_regular_optimizer,
                                                                 milestones=[0.5 * self.n_epoch, 0.75 * self.n_epoch],
@@ -207,8 +208,6 @@ class DGPXRL(object):
         :param train_idx: training traj index.
         :param test_idx: testing traj index.
         :param batch_size: training batch size.
-        :param lambda_1: lasso strength.
-        :param lambda_2: local linear loss strength.
         :param eps: local linear region.
         :param local_samples: .
         :param traj_path: training traj path.
@@ -287,13 +286,15 @@ class DGPXRL(object):
 
                         self.likelihood_regular_optimizer.zero_grad()
                         if self.weight_x and self.likelihood_type == 'classification':
-                            output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
-                            features_sum = features.detach().sum(-1)
-                            weight_output = self.likelihood.weight_encoder(features_sum)
-                            lasso_term = torch.norm(weight_output, p=1) # lasso
-                            lasso_term.backward()
-                            loss_reg_sum += lasso_term
-                            # local_linear_loss = 0
+                            # lasso.
+                            # output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
+                            # features_sum = features.detach().sum(-1)
+                            # weight_output = self.likelihood.weight_encoder(features_sum)
+                            # lasso_term = torch.norm(weight_output, p=1) # lasso
+                            # lasso_term.backward()
+                            # loss_reg_sum += lasso_term
+                            # local linear regularization.
+                            local_linear_loss = 0
                             # output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
                             # features_sum = features.detach().sum(-1)
                             # weight_output = self.likelihood.weight_encoder(features_sum)
@@ -311,7 +312,7 @@ class DGPXRL(object):
                         else:
                             lasso_term = torch.norm(self.likelihood.mixing_weights, p=1) # lasso
                             lasso_term.backward()
-                            loss_reg_sum +=lasso_term
+                            loss_reg_sum += lasso_term
                             self.likelihood_regular_optimizer.step()
 
                         if self.weight_x:
@@ -348,7 +349,6 @@ class DGPXRL(object):
                 self.scheduler_hyperparameter.step()
 
             self.scheduler.step()
-            # if not self.weight_x:
             self.scheduler_regular.step()
             # self.test(test_idx, batch_size, traj_path)
             # self.model.train()
