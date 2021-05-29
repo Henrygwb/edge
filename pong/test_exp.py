@@ -269,7 +269,7 @@ elif args.explainer == 'dgp':
     likelihood_sample_size = 8
 
     model_1 = 'dgp_classification_GRU_100_False_False_False_False_False_False_False_0.1_10_8_True_model.data'
-    dgp_explainer = DGPXRL(train_len=30123, seq_len=seq_len, len_diff=len_diff, input_dim=input_dim,
+    dgp_explainer = DGPXRL(train_len=21500, seq_len=seq_len, len_diff=len_diff, input_dim=input_dim,
                            hiddens=hiddens, likelihood_type=likelihood_type, lr=0.01, optimizer_type='adam',
                            n_epoch=2, gamma=0.1, num_inducing_points=100, n_action=n_action,
                            grid_bounds=grid_bound, encoder_type=encoder_type, inducing_points=None,
@@ -324,7 +324,7 @@ elif args.explainer == 'dgp':
     print('Mean exp time: {}'.format(dgp_1_time))
 
     model_2 = 'dgp_classification_GRU_100_False_False_False_False_False_False_True_0.005_10_8_True_model.data'
-    dgp_explainer = DGPXRL(train_len=30123, seq_len=seq_len, len_diff=len_diff, input_dim=input_dim,
+    dgp_explainer = DGPXRL(train_len=21500, seq_len=seq_len, len_diff=len_diff, input_dim=input_dim,
                            hiddens=hiddens, likelihood_type=likelihood_type, lr=0.01, optimizer_type='adam',
                            n_epoch=2, gamma=0.1, num_inducing_points=100, n_action=n_action,
                            grid_bounds=grid_bound, encoder_type=encoder_type, inducing_points=None,

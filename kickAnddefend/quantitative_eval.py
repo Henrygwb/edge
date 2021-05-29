@@ -1,13 +1,10 @@
 import os, sys
 sys.path.append('..')
 os.environ["CUDA_VISIBLE_DEVICES"] = " "
-# import gym
 import numpy as np
-# import gym_compete
-import timeit
-# from utils import rl_fed, load_agent, load_from_file
-from explainer.quantitative_test import truncate_importance, draw_fid_fig, draw_stab_fig, draw_fid_fig_t, compute_rl_fid
+from explainer.quantitative_test import truncate_importance, draw_fid_fig, draw_fid_fig_t, compute_rl_fid
 
+run_rl_fid = False
 
 encoder_type = 'MLP'
 rnn_cell_type = 'GRU'
@@ -15,7 +12,7 @@ save_path = 'exp_results/'
 likelihood_type = 'classification'
 
 # Explainer 1 - Value function.
-sal_value = np.load(save_path + 'value_exp.npz')['sal'][0:2000]
+sal_value = np.load(save_path + 'value_exp.npz')['sal']
 
 # Explainer 2 - Rudder.
 name = 'rudder_' + encoder_type + '_' + rnn_cell_type
@@ -47,237 +44,117 @@ rat_fid = rat_fid_results['fid']
 rat_stab = rat_fid_results['stab']
 
 # # Explainer 6 - DGP.
-dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_0.01_10_16_True_exp.npz')
+dgp_1_fid_results = np.load(
+    save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_False_0.01_10_16_True_exp.npz')
 dgp_1_sal = dgp_1_fid_results['sal']
 dgp_1_fid = dgp_1_fid_results['fid']
 dgp_1_stab = dgp_1_fid_results['stab']
 
-dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
+dgp_2_fid_results = np.load(
+    save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
 dgp_2_sal = dgp_2_fid_results['sal']
 dgp_2_fid = dgp_2_fid_results['fid']
 dgp_2_stab = dgp_2_fid_results['stab']
 
 # Model Fid/Stab figures.
+rudder_fid = np.vstack((rudder_fid, rudder_stab[None, ...]))
+saliency_fid = np.vstack((saliency_fid, saliency_stab[None, ...]))
+attn_fid = np.vstack((attn_fid, attn_stab[None, ...]))
+rat_fid = np.vstack((rat_fid, rat_stab[None, ...]))
+dgp_1_fid = np.vstack((dgp_1_fid, dgp_1_stab[None, ...]))
+dgp_2_fid = np.vstack((dgp_2_fid, dgp_2_stab[None, ...]))
 
-# Model fid box/bar plot.
+fid_all = np.vstack((rudder_fid[None, ...], saliency_fid[None, ...], attn_fid[None,  ...], rat_fid[None,  ...],
+                     dgp_1_fid[None, ...], dgp_2_fid[None, ...]))
 
-# fid_all = np.vstack((rudder_fid[None, ], saliency_fid[None, ], attn_fid[None, ], rat_fid[None, ],
-#                      dgp_2_fid[None, ], dgp_3_fid[None, ]))
-#
-# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our', 'Our_x']
-# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25']
-# save_fig_path = save_path+'figures_weight_x_true_false/model_fid_bar.pdf'
-# draw_fid_fig(fid_all, explainer_all, metrics_all, save_fig_path, box_plot=False)
-#
-# stab_all = np.vstack((rudder_stab[None, ...], saliency_stab[None, ...], attn_stab[None,  ...], rat_stab[None,  ...],
-#                       dgp_2_stab[None, ...], dgp_3_stab[None, ...]))
-# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our', 'Our_x']
-# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25']
-# save_stab_path = save_path+'figures_weight_x_true_false/model_stab_bar.pdf'
-# draw_stab_fig(stab_all, explainer_all, save_stab_path, box_plot=False)
-#
-# rudder_fid = np.vstack((rudder_fid, rudder_stab[None, ...]))
-# saliency_fid = np.vstack((saliency_fid, saliency_stab[None, ...]))
-# attn_fid = np.vstack((attn_fid, attn_stab[None, ...]))
-# rat_fid = np.vstack((rat_fid, rat_stab[None, ...]))
-# dgp_2_fid = np.vstack((dgp_2_fid, dgp_2_stab[None, ...]))
-# dgp_3_fid = np.vstack((dgp_3_fid, dgp_3_stab[None, ...]))
-#
-# fid_all = np.vstack((rudder_fid[None, ...], saliency_fid[None, ...], attn_fid[None,  ...], rat_fid[None,  ...],
-#                      dgp_2_fid[None, ...], dgp_3_fid[None, ...]))
-# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our', 'Our_x']
-# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25', 'Stability']
-# save_stab_path = save_path+'figures_weight_x_true_false/model_fid_stab_bar.pdf'
-# draw_fid_fig(fid_all, explainer_all, metrics_all, save_stab_path, box_plot=False)
+fid_all = fid_all[:, 1:, :]
 
-
-# fid_all = np.vstack((rudder_fid[None, ...], saliency_fid[None, ...], attn_fid[None,  ...], rat_fid[None,  ...],
-#                      dgp_3_fid[None, ...]))
-# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
-# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25']
-# save_fig_path = save_path+'figures_best_weight_x_true/model_fid_bar.pdf'
-# draw_fid_fig(fid_all, explainer_all, metrics_all, save_fig_path, box_plot=False)
-#
-# stab_all = np.vstack((rudder_stab[None, ...], saliency_stab[None, ...], attn_stab[None,  ...], rat_stab[None,  ...],
-#                       dgp_3_stab[None, ...]))
-# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
-# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25']
-# save_stab_path = save_path+'figures_best_weight_x_true/model_stab_bar.pdf'
-# draw_stab_fig(stab_all, explainer_all, save_stab_path, box_plot=False)
-#
-# rudder_fid = np.vstack((rudder_fid, rudder_stab[None, ...]))
-# saliency_fid = np.vstack((saliency_fid, saliency_stab[None, ...]))
-# attn_fid = np.vstack((attn_fid, attn_stab[None, ...]))
-# rat_fid = np.vstack((rat_fid, rat_stab[None, ...]))
-# dgp_3_fid = np.vstack((dgp_3_fid, dgp_3_stab[None, ...]))
-#
-# fid_all = np.vstack((rudder_fid[None, ...], saliency_fid[None, ...], attn_fid[None,  ...], rat_fid[None,  ...],
-#                      dgp_3_fid[None, ...]))
-# explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
-# metrics_all = ['ZeroOne', 'Top5', 'Top15', 'Top25', 'Stability']
-# save_stab_path = save_path+'figures_best_weight_x_true/model_fid_stab_bar.pdf'
-# draw_fid_fig(fid_all, explainer_all, metrics_all, save_stab_path, box_plot=False)
+explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'EDGE', 'EDGE_x']
+metrics_all = ['Top10', 'Top20', 'Top30', 'Stability']
+save_stab_path = save_path+'model_fid_stab.pdf'
+draw_fid_fig(fid_all, explainer_all, metrics_all, save_stab_path, box_plot=False)
 
 # Fid RL.
-"""
-env_name = 'multicomp/KickAndDefend-v0'
-max_ep_len = 200
-agent_path = './agent-zoo/kick-and-defend'
-model = load_agent(env_name, agent_type=['zoo','zoo'], agent_path=agent_path)
-obs_rms = None
-num_trajs = 2000
-env = gym.make(env_name)
+if run_rl_fid:
+    import gym
+    import gym_compete
+    from utils import rl_fed, load_agent, load_from_file
 
-# Baseline fidelity
-diff_all_10 = np.zeros((5, num_trajs))
-diff_all_20 = np.zeros((5, num_trajs))
-diff_all_30 = np.zeros((5, num_trajs))
+    env_name = 'multicomp/KickAndDefend-v0'
+    max_ep_len = 200
+    agent_path = './agent-zoo/kick-and-defend'
+    model = load_agent(env_name, agent_type=['zoo','zoo'], agent_path=agent_path)
+    obs_rms = None
+    num_trajs = 2000
+    env = gym.make(env_name)
 
-importance_len_10 = np.zeros((5, num_trajs))
-importance_len_20 = np.zeros((5, num_trajs))
-importance_len_30 = np.zeros((5, num_trajs))
-finals_all = np.zeros(num_trajs)
-exps_all = [sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
-for k in range(5):
-    print(k)
-    importance = exps_all[k]
-    for i in range(num_trajs):
-        print(i)
-        value = importance[i,0]
-        if np.sum(importance[i,:] == value) == importance.shape[1]:
-            importance_traj = np.arange(max_ep_len)
-            np.random.shuffle(importance_traj)
-        else:
-            importance_traj = np.argsort(importance[i,])[::-1]
-        importance_traj_10 = truncate_importance(importance_traj, 10)
-        importance_traj_20 = truncate_importance(importance_traj, 20)
-        importance_traj_30 = truncate_importance(importance_traj, 30)
-        original_traj = np.load('trajs_exp/KickAndDefend-v0_traj_{}.npz'.format(i))
-        orin_reward = original_traj['final_rewards']
-        print(orin_reward)
-        if k == 0:
-            finals_all[i] = orin_reward
-        seed = int(original_traj['seed'])
+    # Baseline fidelity
+    diff_all_10 = np.zeros((7, num_trajs))
+    diff_all_20 = np.zeros((7, num_trajs))
+    diff_all_30 = np.zeros((7, num_trajs))
 
-        if orin_reward == 0:
-            orin_reward = -1000
-        else:
-            orin_reward = 1000
-        # rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-        #                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
-        #                                   render=False, exp_agent_id=0, mask_act=False)
+    importance_len_10 = np.zeros((7, num_trajs))
+    importance_len_20 = np.zeros((7, num_trajs))
+    importance_len_30 = np.zeros((7, num_trajs))
+    finals_all = np.zeros(num_trajs)
+    exps_all = [sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal, dgp_1_sal, dgp_2_sal]
+    for k in range(7):
+        print(k)
+        importance = exps_all[k]
+        for i in range(num_trajs):
+            print(i)
+            value = importance[i,0]
+            if np.sum(importance[i,:] == value) == importance.shape[1]:
+                importance_traj = np.arange(max_ep_len)
+                np.random.shuffle(importance_traj)
+            else:
+                importance_traj = np.argsort(importance[i,])[::-1]
+            importance_traj_10 = truncate_importance(importance_traj, 10)
+            importance_traj_20 = truncate_importance(importance_traj, 20)
+            importance_traj_30 = truncate_importance(importance_traj, 30)
+            original_traj = np.load('trajs_exp/KickAndDefend-v0_traj_{}.npz'.format(i))
+            orin_reward = original_traj['final_rewards']
+            print(orin_reward)
+            if k == 0:
+                finals_all[i] = orin_reward
+            seed = int(original_traj['seed'])
 
-        replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10, 
-                                  render=False, exp_agent_id=0, mask_act=True)
-        replay_reward_20 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_20, 
-                                  render=False, exp_agent_id=0, mask_act=True)
-        replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
-                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_30, 
-                                  render=False, exp_agent_id=0, mask_act=True)
+            if orin_reward == 0:
+                orin_reward = -1000
+            else:
+                orin_reward = 1000
+            # rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+            #                                   original_traj=original_traj, max_ep_len=max_ep_len, importance=None,
+            #                                   render=False, exp_agent_id=0, mask_act=False)
 
-        diff_all_10[k, i] = np.abs(orin_reward-replay_reward_10)
-        diff_all_20[k, i] = np.abs(orin_reward-replay_reward_20)
-        diff_all_30[k, i] = np.abs(orin_reward-replay_reward_30)
-        importance_len_10[k, i] = len(importance_traj_10)
-        importance_len_20[k, i] = len(importance_traj_20)
-        importance_len_30[k, i] = len(importance_traj_30)
+            replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                      original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10,
+                                      render=False, exp_agent_id=0, mask_act=True)
+            replay_reward_20 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                      original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_20,
+                                      render=False, exp_agent_id=0, mask_act=True)
+            replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo','zoo'],
+                                      original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_30,
+                                      render=False, exp_agent_id=0, mask_act=True)
 
-np.savez('fid_baselines.npz', diff_10=diff_all_10, diff_20=diff_all_20, diff_30=diff_all_30,
-         len_10=importance_len_10, len_20=importance_len_20, len_30=importance_len_30, rewards=finals_all)
+            diff_all_10[k, i] = np.abs(orin_reward-replay_reward_10)
+            diff_all_20[k, i] = np.abs(orin_reward-replay_reward_20)
+            diff_all_30[k, i] = np.abs(orin_reward-replay_reward_30)
+            importance_len_10[k, i] = len(importance_traj_10)
+            importance_len_20[k, i] = len(importance_traj_20)
+            importance_len_30[k, i] = len(importance_traj_30)
 
-print(np.sum(diff_all_10, 1))
-print(np.sum(diff_all_20, 1))
-print(np.sum(diff_all_30, 1))
+    np.savez(save_path+'fid_rl.npz', diff_10=diff_all_10, diff_20=diff_all_20, diff_30=diff_all_30,
+             len_10=importance_len_10, len_20=importance_len_20, len_30=importance_len_30, rewards=finals_all)
 
+diff_10 = np.load('exp_results/fid_rl.npz')['diff_10']
+diff_20 = np.load('exp_results/fid_rl.npz')['diff_20']
+diff_30 = np.load('exp_results/fid_rl.npz')['diff_30']
 
-# DGP fidelity
-diff_all_10 = np.zeros((2, num_trajs))
-diff_all_20 = np.zeros((2, num_trajs))
-diff_all_30 = np.zeros((2, num_trajs))
+len_10 = np.load('exp_results/fid_rl.npz')['len_10']
+len_20 = np.load('exp_results/fid_rl.npz')['len_20']
+len_30 = np.load('exp_results/fid_rl.npz')['len_30']
 
-importance_len_10 = np.zeros((2, num_trajs))
-importance_len_20 = np.zeros((2, num_trajs))
-importance_len_30 = np.zeros((2, num_trajs))
-finals_all = np.zeros(num_trajs)
-exps_all = [dgp_1_sal, dgp_2_sal]
-for k in range(2):
-    print(k)
-    importance = exps_all[k]
-    for i in range(num_trajs):
-        print(i)
-        value = importance[i,0]
-        if np.sum(importance[i,:] == value) == importance.shape[1]:
-            importance_traj = np.arange(max_ep_len)
-            np.random.shuffle(importance_traj)
-        else:
-            importance_traj = np.argsort(importance[i,])[::-1]
-        importance_traj_10 = truncate_importance(importance_traj, 10)
-        importance_traj_20 = truncate_importance(importance_traj, 20)
-        importance_traj_30 = truncate_importance(importance_traj, 30)
-        original_traj = np.load('trajs_exp/KickAndDefend-v0_traj_{}.npz'.format(i))
-        orin_reward = original_traj['final_rewards']
-        print(orin_reward)
-        if k == 0:
-            finals_all[i] = orin_reward
-        seed = int(original_traj['seed'])
-
-        if orin_reward == 0:
-            orin_reward = -1000
-        else:
-            orin_reward = 1000
-
-        replay_reward_10 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo', 'zoo'],
-                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_10,
-                                  render=False, exp_agent_id=0, mask_act=True)
-        replay_reward_20 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo', 'zoo'],
-                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_20,
-                                  render=False, exp_agent_id=0, mask_act=True)
-        replay_reward_30 = rl_fed(env=env, seed=seed, model=model, obs_rms=obs_rms, agent_type=['zoo', 'zoo'],
-                                  original_traj=original_traj, max_ep_len=max_ep_len, importance=importance_traj_30,
-                                  render=False, exp_agent_id=0, mask_act=True)
-
-        diff_all_10[k, i] = np.abs(orin_reward-replay_reward_10)
-        diff_all_20[k, i] = np.abs(orin_reward-replay_reward_20)
-        diff_all_30[k, i] = np.abs(orin_reward-replay_reward_30)
-        importance_len_10[k, i] = len(importance_traj_10)
-        importance_len_20[k, i] = len(importance_traj_20)
-        importance_len_30[k, i] = len(importance_traj_30)
-
-np.savez('fid_dgp.npz', diff_10=diff_all_10, diff_20=diff_all_20, diff_30=diff_all_30,
-         len_10=importance_len_10, len_20=importance_len_20, len_30=importance_len_30, rewards=finals_all)
-
-print(np.sum(diff_all_10, 1))
-print(np.sum(diff_all_20, 1))
-print(np.sum(diff_all_30, 1))
-"""
-
-a1 = np.load('exp_results/fid_baselines.npz')['diff_10']
-b1 = np.load('exp_results/fid_dgp.npz')['diff_10']
-diff_10 = np.vstack((a1, b1))
-
-a2 = np.load('exp_results/fid_baselines.npz')['diff_20']
-b2 = np.load('exp_results/fid_dgp.npz')['diff_20']
-diff_20 = np.vstack((a2, b2))
-
-a3 = np.load('exp_results/fid_baselines.npz')['diff_30']
-b3 = np.load('exp_results/fid_dgp.npz')['diff_30']
-diff_30 = np.vstack((a3, b3))
-
-a1 = np.load('exp_results/fid_baselines.npz')['len_10']
-b1 = np.load('exp_results/fid_dgp.npz')['len_10']
-len_10 = np.vstack((a1, b1))
-
-a2 = np.load('exp_results/fid_baselines.npz')['len_20']
-b2 = np.load('exp_results/fid_dgp.npz')['len_20']
-len_20 = np.vstack((a2, b2))
-
-a3 = np.load('exp_results/fid_baselines.npz')['len_30']
-b3 = np.load('exp_results/fid_dgp.npz')['len_30']
-len_30 = np.vstack((a3, b3))
-
-# Reward diff and explanation len figures
 eps = 0.001
 rl_fid_10 = compute_rl_fid(diff_10, len_10, diff_max=2000.0, eps=eps)
 rl_fid_20 = compute_rl_fid(diff_20, len_20, diff_max=2000.0, eps=eps)
@@ -290,11 +167,21 @@ print(np.std(rl_fid_20, 1))
 print(np.mean(rl_fid_30, 1))
 print(np.std(rl_fid_30, 1))
 
+rl_fid_10 = np.vstack((rl_fid_10[1:, :], rl_fid_10[0, :]))
+rl_fid_20 = np.vstack((rl_fid_20[1:, :], rl_fid_20[0, :]))
+rl_fid_30 = np.vstack((rl_fid_30[1:, :], rl_fid_30[0, :]))
 
-rl_fid_10 = np.vstack((rl_fid_10[1:6]))
-rl_fid_20 = np.vstack((rl_fid_20[1:6]))
-rl_fid_30 = np.vstack((rl_fid_30[1:6]))
-explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
+explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'EDGE', 'EDGE_x', 'Value']
+metrics_all = ['Top10', 'Top20', 'Top30']
+rl_fid_all = np.vstack((rl_fid_10[None, ...], rl_fid_20[None, ...], rl_fid_30[None,  ...]))
+draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'rl_fid_all.pdf',
+               box_plot=False, log_scale=False)
+
+rl_fid_10 = rl_fid_10[0:5]
+rl_fid_20 = rl_fid_20[0:5]
+rl_fid_30 = rl_fid_30[0:5]
+
+explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'EDGE']
 metrics_all = ['Top10', 'Top20', 'Top30']
 rl_fid_all = np.vstack((rl_fid_10[None, ...], rl_fid_20[None, ...], rl_fid_30[None,  ...]))
 draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'rl_fid.pdf',
