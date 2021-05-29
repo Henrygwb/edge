@@ -132,7 +132,7 @@ def draw_fid_fig(fid_data, explainers, metrics, save_path, box_plot=True, log_sc
                          hue_order=explainers)
         if log_scale:
             ax.set_yscale("log")
-            ax.set_yticks([0.01, 10])
+            ax.set_yticks([0.01, 0.1, 1, 10])
 
     ax.legend(loc='upper left', bbox_to_anchor=(1, 0.5), prop={'size': 30})
     ax.set_ylabel('Metric', fontsize=35)

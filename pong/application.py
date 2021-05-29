@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from matplotlib import pyplot as plt
 from explainer.gp_utils import VisualizeCovar
-from atari_pong.utils import rl_fed, NNPolicy, prepro
+from pong.utils import rl_fed, NNPolicy, prepro
 
 
 def run_exploration(budget, importance, num_trajs, num_step=3, fix_importance=True, random_importance=False):
@@ -492,15 +492,15 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, f
     return 0
 
 
-# budget = 10
-# num_patch_traj = 1880
-# num_test_traj = 500
-#
-# exp_methods = ['dgp', 'value', 'rudder', 'attention', 'rationale', 'saliency']
-# sals = [dgp_1_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
-#
-# for k in range(6):
-#     patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, free_test=True, collect_dict=True)
+budget = 10
+num_patch_traj = 1880
+num_test_traj = 500
+
+exp_methods = ['dgp', 'value', 'rudder', 'attention', 'rationale', 'saliency']
+sals = [dgp_1_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
+
+for k in range(6):
+    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, free_test=True, collect_dict=True)
 
 
 
