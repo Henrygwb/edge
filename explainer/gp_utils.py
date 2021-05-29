@@ -319,10 +319,10 @@ class DGPXRLModel(gpytorch.Module):
 
         if inducing_points is None:
             # inducing_points = torch.randn(num_inducing_points, 2*hiddens[-1]) # Pong game.
-            inducing_points = torch.rand(num_inducing_points, 2 * hiddens[-1]) # MuJoCo/cartpole game.
+            inducing_points = torch.rand(num_inducing_points, 2 * hiddens[-1]) # MuJoCo/gym game.
         if mean_inducing_points is None:
             # mean_inducing_points = torch.randn(num_inducing_points*5, 2*hiddens[-1])
-            mean_inducing_points = torch.rand(num_inducing_points*5, 2 * hiddens[-1]) # MuJoCo/cartpole game.
+            mean_inducing_points = torch.rand(num_inducing_points*5, 2 * hiddens[-1]) # MuJoCo/gym game.
         # self.batch_norm = nn.BatchNorm1d(hiddens[-1] * 2)
         self.gp_layer = GaussianProcessLayer(input_dim_step=hiddens[-1], input_dim_traj=hiddens[-1],
                                              num_inducing_points=num_inducing_points, inducing_points=inducing_points,

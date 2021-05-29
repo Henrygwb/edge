@@ -67,7 +67,7 @@ fid_all = fid_all[:, 1:, :]
 explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'EDGE']
 metrics_all = ['Top10', 'Top20', 'Top30', 'Stability']
 save_fig_path = save_path+'model_fid_stab.pdf'
-draw_fid_fig(fid_all, explainer_all, metrics_all, save_fig_path, box_plot=False, log_scale=False)
+draw_fid_fig(fid_all, explainer_all, metrics_all, save_fig_path, box_plot=False, log_scale=True)
 
 # Fid RL.fig
 if run_rl_fid:

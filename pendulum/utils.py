@@ -41,6 +41,7 @@ def get_args():
 
     return args
 
+
 def get_model(args):
     game = args.game
     model_path = Path(args.model_dir)/f'{game}'
@@ -78,3 +79,34 @@ def get_model(args):
     env = make_vec_env(args.game)
     return model, env
 
+
+def rl_fed(env, seed, model, original_traj, max_ep_len=1e3, importance=None, render=False, mask_act=False):
+
+    acts_orin = original_traj['actions']
+    traj_len = np.count_nonzero(acts_orin)
+    start_step = max_ep_len - traj_len
+
+    env.seed(seed)
+    env.action_space.seed(seed)
+
+    episode_length, epr, done = 0, 0, False  # bookkeeping
+    observation = env.reset()
+
+    state = None
+    for i in range(traj_len):
+        act, state = model.predict(observation, state=state, deterministic=True)
+        if mask_act:
+            if start_step+i in importance:
+                act = np.random.uniform(-2,2,(1,1))
+
+        observation, reward, done, infos = env.step(act)
+        if render: env.render()
+        epr += reward[0]
+        # save info!
+        episode_length += 1
+        if done:
+            assert reward[0] != 0
+            break
+
+    # print('step # {}, reward {:.0f}.'.format(episode_length, epr))
+    return epr
