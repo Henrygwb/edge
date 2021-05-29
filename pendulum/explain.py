@@ -15,22 +15,22 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--explainer", type=str, required=True, default='dgp')
 parser.add_argument("--game", type=str, required=True, default='Pendulum-v0')
 parser.add_argument("--train_dir", type=str, required=True, help='Training traj dir')
-parser.add_argument("--model_dir", type=str, required=True, help='pretrained model dir')
 parser.add_argument("--model_save_dir", type=str, required=True, help='dir to save explanation models')
 parser.add_argument("--n_action", type=int, required=True, help='Cardinality of action space, 0 for continuous')
 parser.add_argument("--epochs", type=int, required=True, help='num epochs')
-parser.add_argument("--eps", type=float, required=False, default=0.05, help='fid eps')
+parser.add_argument("--eps", type=float, required=False, default=0.01, help='fid eps')
 
 args = parser.parse_args()
 
 # Setup env, load the target agent, and collect the trajectories.
 env_name = args.game
-model, env = get_model(args)
-
+# model, env = get_model(args)
+test_trajs = [x for x in (Path('logs/Pendulum-v0-2021-05-05-14:55:08-4000-episodes').iterdir()) if 'metadata' not in x.name]
 all_trajs = [x for x in (Path(args.train_dir).iterdir()) if 'metadata' not in x.name]
 print(f'{len(all_trajs)} total trajs')
 num_traj = len(all_trajs)
 traj_path = str(Path(args.train_dir).absolute()/f'{env_name}')
+exp_traj_path = str(Path('logs/Pendulum-v0-2021-05-05-14:55:08-4000-episodes').absolute()/f'{env_name}')
 max_ep_len = len(np.load(all_trajs[0])['actions'])
 
 # Get the shared parameters, prepare training/testing data.
@@ -41,7 +41,8 @@ len_diff = max_ep_len - seq_len
 total_data_idx = np.arange(len(all_trajs))  # np.arange(30)
 train_idx = total_data_idx[0:int(total_data_idx.shape[0] * 0.7), ]
 test_idx = total_data_idx[int(total_data_idx.shape[0] * 0.7):, ]
-exp_idx = total_data_idx[0:int(total_data_idx.shape[0] * 0.1), ]
+exp_idx = np.arange(len(test_trajs))
+print(len(test_trajs))
 
 hiddens = [32, 16, 4]
 embed_dim = 3
@@ -61,7 +62,7 @@ if args.explainer == 'value':
 
     for batch in range(n_batch):
         for idx in exp_idx[batch * batch_size:(batch + 1) * batch_size, ]:
-            value_tmp = np.load(all_trajs[idx])['values']
+            value_tmp = np.load(test_trajs[idx])['values']
             values.append(value_tmp[len_diff:])
 
     values = np.array(values)
@@ -78,10 +79,11 @@ elif args.explainer == 'rudder':
     rudder_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path,
                            save_path=save_path + name + '_model.data')
     rudder_explainer.test(test_idx, batch_size, traj_path)
+    print(f'Loading {save_path + name + "_model.data"}')
     rudder_explainer.load(save_path + name + '_model.data')
     rudder_explainer.test(test_idx, batch_size, traj_path)
     sal_rudder_all, fid_all, stab_all, abs_all, mean_time = rudder_explainer.exp_fid_stab(exp_idx, batch_size,
-                                                                                          traj_path,
+                                                                                          exp_traj_path,
                                                                                           likelihood_type,
                                                                                           n_stab_samples,
                                                                                           eps=args.eps)
@@ -221,11 +223,12 @@ elif args.explainer == 'attention':
 
     attention_explainer.train(train_idx, test_idx, batch_size, n_epoch, traj_path, save_path=save_path+name+'_model.data')
     attention_explainer.test(test_idx, batch_size, traj_path)
+    print(f'Loading {save_path + name + "_model.data"}')
     attention_explainer.load(save_path + name + '_model.data')
     attention_explainer.test(test_idx, batch_size, traj_path)
 
     sal_attention_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = attention_explainer.exp_fid_stab(
-        exp_idx, batch_size, traj_path, n_stab_samples, eps=args.eps)
+        exp_idx, batch_size, exp_traj_path, n_stab_samples, eps=args.eps)
 
     print('=============================================')
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
@@ -268,7 +271,7 @@ elif args.explainer == 'attention':
 
 elif args.explainer == 'rationale':
     # Explainer 5 - RationaleNet.
-    name = 'rationale_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + str(embed_dim)
+    name = 'rationale_' + likelihood_type + '_' + encoder_type + '_' + rnn_cell_type + '_' + str(embed_dim) + '_' + str(n_epoch)
 
     rationale_explainer = RationaleNet(seq_len, len_diff, input_dim, likelihood_type, hiddens, n_action,
                                        embed_dim=embed_dim, encoder_type=encoder_type, num_class=num_class
@@ -281,7 +284,7 @@ elif args.explainer == 'rationale':
     rationale_explainer.test(test_idx, batch_size, traj_path)
 
     sal_rationale_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = rationale_explainer.exp_fid_stab(
-        exp_idx, batch_size, traj_path, n_stab_samples, eps=args.eps)
+        exp_idx, batch_size, exp_traj_path, n_stab_samples, eps=args.eps)
 
     print('=============================================')
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))
@@ -334,7 +337,7 @@ elif args.explainer == 'dgp':
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
     weight_x = True
     logit = True
-    lambda_1 = 0.00001
+    lambda_1 = 0.01
     local_samples = 10
     likelihood_sample_size = 16
 
@@ -352,17 +355,16 @@ elif args.explainer == 'dgp':
            + str(using_ksi) + '_' + str(using_ciq) + '_' + str(using_sor) + '_' \
            + str(using_OrthogonallyDecouple) + '_' + str(weight_x) + '_' + str(lambda_1) + '_' \
            + str(local_samples) + '_' + str(likelihood_sample_size) + '_' + str(logit) + '_' + str(embed_dim)
-
     dgp_explainer.train(train_idx, test_idx, batch_size, traj_path, local_samples=local_samples,
                         likelihood_sample_size=likelihood_sample_size,
                         save_path=save_path + name + '_model.data')
-    #
     dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
+    print(f'Loading {save_path + name + "_model.data"}')
     dgp_explainer.load(save_path + name + '_model.data')
     dgp_explainer.test(test_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
 
     sal_rationale_all, covar_all, fid_all, stab_all, acc_all, abs_diff_all, mean_time = dgp_explainer.exp_fid_stab(
-        exp_idx, batch_size, traj_path, logit=logit, n_stab_samples=n_stab_samples, eps=args.eps)
+        exp_idx, batch_size, exp_traj_path, logit=logit, n_stab_samples=n_stab_samples, eps=args.eps)
 
     print('=============================================')
     print('Mean fid of the zero-one normalization: {}'.format(np.mean(fid_all[0])))

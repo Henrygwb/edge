@@ -606,9 +606,13 @@ class CustomizedGaussianLikelihood(Likelihood):
             noise_prior=noise_prior, noise_constraint=noise_constraint, batch_shape=batch_shape
         )
         self.weight_x = weight_x
-
+        """
+        Old model with input-dependent bias
         if self.weight_x:
             self.weight_encoder = nn.Sequential(nn.Linear(hidden_dims, 1))
+        """
+        if self.weight_x:
+            self.weight_encoder = nn.Sequential(nn.Linear(hidden_dims, 1), nn.Flatten(1, -1), nn.Linear(num_features, 1))
 
         self.register_parameter(
             name="mixing_weights",
@@ -665,7 +669,7 @@ class CustomizedGaussianLikelihood(Likelihood):
         :return: E_{f~q(f)}[log p(y|f)].
         """
         if self.weight_x:
-            mean_bias = self.weight_encoder(kwargs['input_encoding']).squeeze(-1)
+            mean_bias = self.weight_encoder(kwargs['input_encoding'])#.squeeze(-1)
             # input_encoding = kwargs['input_encoding'][:, -1, :]
             # mean_bias = self.weight_encoder(input_encoding).flatten()
         else:
@@ -710,9 +714,14 @@ class CustomizedGaussianLikelihood(Likelihood):
         exp_ff = left_weight @ exp_ff
         exp_ff = exp_ff * mask
         exp_ff = exp_ff @ right_weight
-
+        
+        """
+        Old model with input-dependent bias
         mean_matrix = mean.view(num_data, self.num_features) + mean_bias
         mean_w = mean_matrix @ w_transpose
+        """
+        mean_matrix = mean.view(num_data, self.num_features) 
+        mean_w = mean_matrix @ w_transpose + mean_bias
         exp_ff = exp_ff.flatten()
         mean_w = mean_w.flatten()
         exp_y_f = (target - mean_w)**2 + exp_ff
@@ -733,7 +742,7 @@ class CustomizedGaussianLikelihood(Likelihood):
         :return: p(y|f).
         """
         if self.weight_x:
-            mean_bias = self.weight_encoder(kwargs['input_encoding']).squeeze(-1)
+            mean_bias = self.weight_encoder(kwargs['input_encoding'])##.squeeze(-1)
             # input_encoding = kwargs['input_encoding'][:, -1, :]
             # mean_bias = self.weight_encoder(input_encoding).flatten()
         else:
@@ -742,8 +751,14 @@ class CustomizedGaussianLikelihood(Likelihood):
         num_data, num_features = function_samples.shape[-2:]
         function_samples = function_samples.view(function_samples.size(0),
                                                    num_data/self.num_features, self.num_features) # (N_sample, n, T)
+        """
+        Old model with input-dependent bias
         function_samples = function_samples + mean_bias
         function_samples = function_samples @ self.mixing_weights # (N_sample, n, 1)
+        """
+        function_samples = function_samples @ self.mixing_weights # (N_sample, n, 1)
+        function_samples = function_samples + mean_bias
+        
         function_samples = function_samples
         noise = self._shaped_noise_covar(function_samples.shape, *params, **kwargs).diag()
         return base_distributions.Normal(function_samples, noise.sqrt())
@@ -774,7 +789,7 @@ class CustomizedGaussianLikelihood(Likelihood):
                  cov[fW^{t}]_{ij}= W\Sigma_{i*T:(i+1)*T, j*T:(j+1)*T}W^{T}.
         """
         if self.weight_x:
-            mean_bias = self.weight_encoder(kwargs['input_encoding']).squeeze(-1)
+            mean_bias = self.weight_encoder(kwargs['input_encoding'])##.squeeze(-1)
             # input_encoding = kwargs['input_encoding'][:, -1, :]
             # mean_bias = self.weight_encoder(input_encoding).flatten()
         else:
@@ -783,8 +798,14 @@ class CustomizedGaussianLikelihood(Likelihood):
         mean, covar = function_dist.mean, function_dist.lazy_covariance_matrix
         num_data = int(mean.shape[0]/self.num_features)
         mean = mean.view(num_data, self.num_features)
+        
+        """
+        Old model with input-dependent bias
         mean = mean + mean_bias
         mean = mean @ self.mixing_weights.transpose(-2, -1)
+        """
+        mean = mean @ self.mixing_weights.transpose(-2, -1)
+        mean = mean + mean_bias
         mean = mean.flatten()
         # Matrix form of the covariance matrix.
         # left = [W, 0, 0, 0,
