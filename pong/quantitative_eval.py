@@ -45,7 +45,6 @@ rat_fid = rat_fid_results['fid']
 rat_stab = rat_fid_results['stab']
 
 # Explainer 6 - DGP.
-"""
 dgp_1_fid_results = np.load(
     save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_False_0.1_10_8_True_exp.npz')
 dgp_1_sal = dgp_1_fid_results['sal']
@@ -53,7 +52,7 @@ dgp_1_fid = dgp_1_fid_results['fid']
 dgp_1_stab = dgp_1_fid_results['stab']
 
 dgp_2_fid_results = np.load(
-    save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_exp.npz')
+    save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_True_0.005_10_8_True_exp.npz')
 dgp_2_sal = dgp_2_fid_results['sal']
 dgp_2_fid = dgp_2_fid_results['fid']
 dgp_2_stab = dgp_2_fid_results['stab']
@@ -72,7 +71,7 @@ explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'EDGE', 'EDGE_x']
 metrics_all = ['Top10', 'Top20', 'Top30', 'Stability']
 save_stab_path = save_path+'model_fid_stab_bar.pdf'
 draw_fid_fig(fid_all, explainer_all, metrics_all, save_path+'model_fid_stab.pdf', box_plot=False)
-"""
+
 
 # Fid RL.
 if run_rl_fid:
@@ -157,6 +156,12 @@ print(np.mean(rl_fid_20, 1))
 print(np.std(rl_fid_20, 1))
 print(np.mean(rl_fid_30, 1))
 print(np.std(rl_fid_30, 1))
+
+# rl_fid_10[-2, ] is dgp_classification_GRU_100_False_False_False_False_False_False_True_0.005_10_8_True_exp.npz.
+
+rl_fid_10 = np.vstack((rl_fid_10[:6, :], rl_fid_10[-1, :]))
+rl_fid_20 = np.vstack((rl_fid_20[:6, :], rl_fid_20[-1, :]))
+rl_fid_30 = np.vstack((rl_fid_30[:6, :], rl_fid_30[-1, :]))
 
 rl_fid_10 = np.vstack((rl_fid_10[1:, :], rl_fid_10[0, :]))
 rl_fid_20 = np.vstack((rl_fid_20[1:, :], rl_fid_20[0, :]))

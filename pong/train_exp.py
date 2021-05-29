@@ -93,7 +93,7 @@ elif args.explainer == 'dgp':
     grid_bound = [(-3, 3)] * hiddens[-1] * 2
     weight_x = False # True
     logit = True
-    lambda_1 = 0.1 # 0.001
+    lambda_1 = 0.1 # 0.005
     local_samples = 10
     likelihood_sample_size = 8
 

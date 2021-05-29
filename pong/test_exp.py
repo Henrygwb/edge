@@ -323,14 +323,14 @@ elif args.explainer == 'dgp':
     print('=============================================')
     print('Mean exp time: {}'.format(dgp_1_time))
 
-    model_2 = 'dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_model.data'
+    model_2 = 'dgp_classification_GRU_100_False_False_False_False_False_False_True_0.005_10_8_True_model.data'
     dgp_explainer = DGPXRL(train_len=30123, seq_len=seq_len, len_diff=len_diff, input_dim=input_dim,
                            hiddens=hiddens, likelihood_type=likelihood_type, lr=0.01, optimizer_type='adam',
                            n_epoch=2, gamma=0.1, num_inducing_points=100, n_action=n_action,
                            grid_bounds=grid_bound, encoder_type=encoder_type, inducing_points=None,
                            mean_inducing_points=None, num_class=num_class, rnn_cell_type=rnn_cell_type,
                            using_ngd=False, using_ksi=False, using_ciq=False, using_sor=False,
-                           using_OrthogonallyDecouple=False, weight_x=True, lambda_1=0.001)
+                           using_OrthogonallyDecouple=False, weight_x=True, lambda_1=0.005)
 
     dgp_explainer.load(save_path+model_2)
     dgp_explainer.test(exp_idx, batch_size, traj_path, likelihood_sample_size=likelihood_sample_size)
@@ -343,7 +343,7 @@ elif args.explainer == 'dgp':
                         step_covar=covar_all[2], abs_diff=abs_diff_all)
 
     dgp_2_fid_results = np.load(
-        save_path + 'dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_exp.npz')
+        save_path + 'dgp_classification_GRU_100_False_False_False_False_False_False_True_0.005_10_8_True_exp.npz')
     dgp_2_sal = dgp_2_fid_results['sal']
     dgp_2_fid = dgp_2_fid_results['fid']
     dgp_2_stab = dgp_2_fid_results['stab']

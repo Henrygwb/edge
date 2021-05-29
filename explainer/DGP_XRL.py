@@ -287,14 +287,14 @@ class DGPXRL(object):
                         self.likelihood_regular_optimizer.zero_grad()
                         if self.weight_x and self.likelihood_type == 'classification':
                             # lasso.
-                            # output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
-                            # features_sum = features.detach().sum(-1)
-                            # weight_output = self.likelihood.weight_encoder(features_sum)
-                            # lasso_term = torch.norm(weight_output, p=1) # lasso
-                            # lasso_term.backward()
-                            # loss_reg_sum += lasso_term
+                            output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
+                            features_sum = features.detach().sum(-1)
+                            weight_output = self.likelihood.weight_encoder(features_sum)
+                            lasso_term = torch.norm(weight_output, p=1) # lasso
+                            lasso_term.backward()
+                            loss_reg_sum += lasso_term
+
                             # local linear regularization.
-                            local_linear_loss = 0
                             # output, features = self.model(obs, acts)  # marginal variational posterior, q(f|x).
                             # features_sum = features.detach().sum(-1)
                             # weight_output = self.likelihood.weight_encoder(features_sum)
