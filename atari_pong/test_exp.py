@@ -27,12 +27,12 @@ hiddens = [4]
 encoder_type = 'CNN'
 rnn_cell_type = 'GRU'
 n_epoch = 100
-batch_size = 40
+batch_size = 4
 save_path = 'models/'
 likelihood_type = 'classification'
 n_stab_samples = 10
 
-
+"""
 # Explainer 1 - Value function.
 values = []
 n_batch = int(exp_idx.shape[0] / batch_size)
@@ -389,6 +389,15 @@ print('Std stab: {}'.format(np.std(dgp_2_stab)))
 
 print('=============================================')
 print('Mean exp time: {}'.format(dgp_2_time))
+"""
+
+save_path = 'models/dgp/'
+likelihood_type = 'classification'
+n_stab_samples = 10
+
+# Explainer 6 - DGP.
+grid_bound = [(-3, 3)] * hiddens[-1] * 2
+likelihood_sample_size = 8
 
 
 model_3 = 'dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_model.data'

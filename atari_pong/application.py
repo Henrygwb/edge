@@ -386,11 +386,11 @@ for k in range(6):
     win = np.where(att_results['diff_10'][k, ] == 1)[0].shape[0]
     print('Win rate 10: %.2f' % (100 * (win / total_trajs_num)))
 
+    win = np.where(att_results['diff_20'][k, ] == 1)[0].shape[0]
+    print('Win rate 20: %.2f' % (100 * (win / total_trajs_num)))
+
     win = np.where(att_results['diff_30'][k, ] == 1)[0].shape[0]
     print('Win rate 30: %.2f' % (100 * (win / total_trajs_num)))
-
-    win = np.where(att_results['diff_50'][k, ] == 1)[0].shape[0]
-    print('Win rate 50: %.2f' % (100 * (win / total_trajs_num)))
 
 
 # Patch individual trajs and policy.

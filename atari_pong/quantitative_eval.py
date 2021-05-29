@@ -261,33 +261,28 @@ len_30 = np.vstack((a3, b3))
 # Reward diff and explanation len figures
 eps = 0.001
 rl_fid_10 = compute_rl_fid(diff_10, len_10, diff_max=2, eps=eps)
-rl_fid_30 = compute_rl_fid(diff_20, len_20, diff_max=2, eps=eps)
-rl_fid_50 = compute_rl_fid(diff_30, len_30, diff_max=2, eps=eps)
+rl_fid_20 = compute_rl_fid(diff_20, len_20, diff_max=2, eps=eps)
+rl_fid_30 = compute_rl_fid(diff_30, len_30, diff_max=2, eps=eps)
 
 print(np.mean(rl_fid_10, 1))
 print(np.std(rl_fid_10, 1))
+print(np.mean(rl_fid_20, 1))
+print(np.std(rl_fid_20, 1))
 print(np.mean(rl_fid_30, 1))
 print(np.std(rl_fid_30, 1))
-print(np.mean(rl_fid_50, 1))
-print(np.std(rl_fid_50, 1))
 
-explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our_1', 'Our_2', 'Our_3']
+# explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our_1', 'Our_2', 'Our_3']
+# metrics_all = ['Top10', 'Top20', 'Top30']
+# rl_fid_all = np.vstack((rl_fid_10[None, ...], rl_fid_20[None, ...], rl_fid_30[None,  ...]))
+# draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'rl_fid_bar.pdf', box_plot=False, log_scale=False)
+# draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'rl_fid_box.pdf', box_plot=True, log_scale=False)
+
+rl_fid_10 = np.vstack((rl_fid_10[1:5], rl_fid_10[6:7]))
+rl_fid_20 = np.vstack((rl_fid_20[1:5], rl_fid_20[6:7]))
+rl_fid_30 = np.vstack((rl_fid_30[1:5], rl_fid_30[6:7]))
+
+explainer_all = ['Rudder', 'Saliency', 'Attention', 'RatNet', 'EDGE']
 metrics_all = ['Top10', 'Top20', 'Top30']
-rl_fid_all = np.vstack((rl_fid_10[None, ...], rl_fid_30[None, ...], rl_fid_50[None,  ...]))
-draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'rl_fid_bar.pdf', box_plot=False, log_scale=False)
-draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'rl_fid_box.pdf', box_plot=True, log_scale=False)
-
-rl_fid_10 = np.vstack((rl_fid_10[0:5], rl_fid_10[6:]))
-rl_fid_30 = np.vstack((rl_fid_30[0:5], rl_fid_30[6:]))
-rl_fid_50 = np.vstack((rl_fid_50[0:5], rl_fid_50[6:]))
-
-explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our', 'Our_x']
-metrics_all = ['Top5', 'Top15', 'Top25']
-rl_fid_all = np.vstack((rl_fid_10[None, ...], rl_fid_30[None, ...], rl_fid_50[None,  ...]))
-draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'figures_weight_x_true_false/rl_fid_bar_our.pdf',
-               box_plot=False, log_scale=False)
-
-explainer_all = ['Value', 'Rudder', 'Saliency', 'Attention', 'RatNet', 'Our']
-metrics_all = ['Top5', 'Top15', 'Top25']
-draw_fid_fig_t(rl_fid_all[:, :-1, ...], explainer_all, metrics_all, save_path+'figures_best_weight_x_false/rl_fid_bar_our.pdf',
+rl_fid_all = np.vstack((rl_fid_10[None, ...], rl_fid_20[None, ...], rl_fid_30[None,  ...]))
+draw_fid_fig_t(rl_fid_all, explainer_all, metrics_all, save_path+'rl_fid.pdf',
                box_plot=False, log_scale=False)
