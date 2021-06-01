@@ -305,11 +305,6 @@ dgp_1_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_Fa
 dgp_1_sal = dgp_1_fid_results['sal']
 # traj_covar = dgp_1_fid_results['traj_cova']
 # step_covar = dgp_1_fid_results['step_covar']
-#
-# dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_100_False_False_False_False_False_False_True_0.001_10_8_True_exp.npz')
-# dgp_2_sal = dgp_2_fid_results['sal']
-# traj_covar = dgp_2_fid_results['traj_cova']
-# step_covar = dgp_2_fid_results['step_covar']
 
 # Traj important time steps visualization.
 # Winning trajs.
@@ -422,7 +417,7 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, f
     # print(obs_dict.shape)
     # print(acts_dict.shape)
     # print(len(loss_seeds)) 
-    num_seed_trajs = 22 # int((len(loss_seeds)/num_patch_traj)*num_test_traj)
+    num_seed_trajs = int((len(loss_seeds)/num_patch_traj)*obs_dict.shape[0])
     loss_seeds = loss_seeds[0:num_seed_trajs]
     obs_dict = obs_dict[0:num_seed_trajs, ]
     acts_dict = acts_dict[0:num_seed_trajs, ]

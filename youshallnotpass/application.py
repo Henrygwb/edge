@@ -269,7 +269,7 @@ dgp_1_sal = dgp_1_fid_results['sal']
 # traj_covar_1 = dgp_1_fid_results['traj_cova']
 # step_covar_1 = dgp_1_fid_results['step_covar']
 
-dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_1e-05_10_16_True_exp.npz')
+dgp_2_fid_results = np.load(save_path + 'dgp/dgp_classification_GRU_600_False_False_False_False_False_False_True_0.005_10_16_True_exp.npz')
 dgp_2_sal = dgp_2_fid_results['sal']
 # traj_covar_2 = dgp_2_fid_results['traj_cova']
 # step_covar_2 = dgp_2_fid_results['step_covar']
@@ -296,23 +296,14 @@ dgp_2_sal = dgp_2_fid_results['sal']
 # del traj_covar_1
 # del step_covar_1
 
-# for i in range(40):
-#    VisualizeCovar(step_covar_2[0, i*200:(i+1)*200, i*200:(i+1)*200], save_path+'dgp_2_step_covar_'+str(i)+'.pdf')
-# traj_covar_small = np.zeros((40, 40))
-# for i in range(40):
-#     for j in range(40):
-#         traj_covar_small[i, j] = traj_covar_2[0, i*200, j*200]
-# VisualizeCovar(traj_covar_small, save_path+'dgp_2_traj_covar.pdf')
-# del traj_covar_2
-# del step_covar_2
 
 # Launch attack at the most importance time steps: Top 10/30/50.
-exps_all = [dgp_1_sal, dgp_2_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal]
-orin_reward_all = np.zeros((7, 500))
-reward_10_all = np.zeros((7, 500))
-reward_20_all = np.zeros((7, 500))
-reward_30_all = np.zeros((7, 500))
-for k in range(7):
+exps_all = [dgp_1_sal, dgp_2_sal, sal_value, rudder_sal, saliency_sal, attn_sal, rat_sal, None]
+orin_reward_all = np.zeros((8, 500))
+reward_10_all = np.zeros((8, 500))
+reward_20_all = np.zeros((8, 500))
+reward_30_all = np.zeros((8, 500))
+for k in range(8):
     print(k)
     importance = exps_all[k]
     for i in range(500):
@@ -350,7 +341,7 @@ np.savez(save_path+'att_results.npz', orin_reward=orin_reward_all,
 
 att_results = np.load(save_path+'att_results.npz')
 total_trajs_num = 500
-for k in range(7):
+for k in range(8):
     print('======================')
     print(str(k))
     win = np.where(att_results['orin_reward'][k, ] == 1000)[0].shape[0]
@@ -399,7 +390,7 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, n
     # print(obs_dict.shape)
     # print(acts_dict.shape)
     # print(len(loss_seeds))
-    num_seed_trajs = 50 # int((len(loss_seeds)/num_patch_traj)*num_test_traj) + 1
+    num_seed_trajs = int((len(loss_seeds)/num_patch_traj)*obs_dict.shape[0]) + 1
     loss_seeds_1 = loss_seeds[0:num_seed_trajs]
     obs_dict = obs_dict[0:num_seed_trajs, ]
     acts_dict = acts_dict[0:num_seed_trajs, ]
@@ -425,7 +416,7 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, n
     print(p)
     print('===')
     if p == 0:
-        p = 0.1
+        p = 1
 
     num_rounds = 0
     results_1 = []
@@ -474,15 +465,15 @@ def patch_trajs_policy(exp_method, sal, budget, num_patch_traj, num_test_traj, n
     return 0
 
 
-# budget = 10
-# num_patch_traj = 2000
-# num_test_traj = 500
-#
-# exp_methods = ['dgp_1', 'dgp_2', 'value', 'rudder', 'attention', 'rationale', 'saliency']
-# sals = [dgp_1_sal, dgp_2_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
-#
-# for k in range(6):
-#     patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=True,
-#                        collect_dict=True)
-#     patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=False,
-#                        collect_dict=False)
+budget = 10
+num_patch_traj = 2000
+num_test_traj = 500
+
+exp_methods = ['dgp_1', 'dgp_2', 'value', 'rudder', 'attention', 'rationale', 'saliency']
+sals = [dgp_1_sal, dgp_2_sal, sal_value, rudder_sal, attn_sal, rat_sal, saliency_sal]
+
+for k in range(7):
+    patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=True,
+                       collect_dict=True)
+    # patch_trajs_policy(exp_methods[k], sals[k], budget, num_patch_traj, num_test_traj, num_step=10, free_test=False,
+    #                    collect_dict=False)
