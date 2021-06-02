@@ -29,7 +29,7 @@ Key parameters for each explainer:
 - `RationaleNet_XRL.py`: the commen parameters discussed above.
 - `DGP_XRL.py`: many GP strategy options, use the default choice in `pong.py` or turn off all the options. 
 
-The `atari_pong` contains the explanation pipeline, pretrained agents, and the explanation results (approximation model and time step importance). `pong.py` has the explanation pipline.
+The `pong` contains the explanation pipeline, pretrained agents, and the explanation results (approximation model and time step importance). `pong.py` has the explanation pipline.
 
 ## Explanation workflow.
 - Step 1: make a new folder for the game you are working on (we keep one (type of) game(s) in one folder) with the following subfolders: `agents`, `trajs`, `exp_model_results` or naming them with your own style.
