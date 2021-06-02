@@ -31,7 +31,7 @@ Key parameters for each explainer:
 
 The `atari_pong` contains the explanation pipeline, pretrained agents, and the explanation results (approximation model and time step importance). `pong.py` has the explanation pipline.
 
-## Explanation workflow (refer to `atari_pong`).
+## Explanation workflow.
 - Step 1: make a new folder for the game you are working on (we keep one (type of) game(s) in one folder) with the following subfolders: `agents`, `trajs`, `exp_model_results` or naming them with your own style.
 - Step 2: set up the game env, load the pretrained agent, and collect trajectories by running the agent in the environment.
   - Note 1: Run and save the trajectories when collecting them at the first time and load the collected traj for future usages (make sure all the models are trained on the same set of trajectories).
