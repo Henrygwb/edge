@@ -1,4 +1,4 @@
-# Trajectory-level explanation using Nonparametric Bayesian.
+# EDGE: Strategy-level explanation of DRL agents.
 
 ## Code structure.
 
@@ -14,6 +14,7 @@ Each object has the following functions:
 - `get_explanations`: compute the time step importances for the input trajectories.
 - `save`: save the trained model.
 - `load`: load a well trained model.
+- `exp_fid_stab`: get the explanations and the explainability and stability testing results (varying top10/20/30).
 
 Key parameters (the instruction of most parameters can be found in the inline comments):
 - `encoder_type`: 'CNN' or 'MLP', if the observation is environment frame snapshot (image), use 'CNN', it will use CNN to transform the input observation ([n_traj, seq_len, input_channels, input_dim, input_dim], torch.float32) into the observation encoding ([n_traj, seq_len, encode_dim]). It will also use an embedding layer to transform the categorical action ([n_traj, seq_len], torch.long) into the action embedding. Then, it concatenate the observation encoding and action embedding and output the final hidden representation. Note that this cnn structure is designed for Atari games, if currently only support input_dim=80/84 and do not support continous actions. If using a different input dim, change the '4' in  `self.cnn_out_dim = 4 * 4 * 16 + embed_dim` in line 54 of `rnn_utils.py` to the current encoded dim. If using continous actions, change the embeding layer in line 35 of `rnn_utils.py` to an MLP. if the observation and action are feature vectors, use 'MLP', it will concatenate the observations and actions and then run an MLP.    
@@ -55,12 +56,15 @@ The `atari_pong` contains the explanation pipeline, pretrained agents, and the e
   - Note 4: obtain the final rewards. Discrete final rewards: change the final rewards to class labels if it has negative values (e.g., [-1, 0, 1] -> [0, 1, 2]), and record the number of classes.
   - Note 5: Prepare the training and testing set. Be careful with the data type: torch.float32 for continuous variables, torch.long for integers (discrete variables).
 - Step 4: record the value function outputs as the first baseline results.
-- Step 5: run the baselines mentioned above with a different choice of `--explainer`: 'rudder', 'saliency', 'attention', 'rationale', save the trained model and obtained explanations, and training/testing accuracy and runtimes. 
-- Step 6: run our method and save/record the same things.
-- Step 7: Quantitative evaluation.
+- Step 5: run our method and the baseline approaches mentioned above with: `python game_name/train_exp.py --explainer=` 'rudder', 'saliency', 'attention', 'rationale', and 'dgp' and save the trained model. 
+- Step 6: Quantitative evaluations: model performance, explainability, stability, and run time: `python game_name/test_exp.py --explainer=` 'rudder', 'saliency', 'attention', 'rationale', and 'dgp' and display/save the results. 
   - Approximation accuracy (precision, recall, f1).
-  - Fidelity w.r.t. the explanation model: (In total four metrics (four methods of perturbing the input traj), each one computes three/one values in classification/regression. For classification, we compute the fidelity value of each traj, the prediction diff of each traj before/after perturbation, and the classification accuracy of the perturbed trajs. For regression, we compute the abs prediction diff of each traj before/after perturbation.
-  - Fidelity w.r.t. the RL task. 
+  - Explainability: (In total four metrics (four methods of perturbing the input traj), each one computes three/one values in classification/regression. For classification, we compute the fidelity value of each traj, the prediction diff of each traj before/after perturbation, and the classification accuracy of the perturbed trajs. For regression, we compute the abs prediction diff of each traj before/after perturbation. (Top-K normalization with K=10/20/30)
   - Sensitivity/stablity: two parameters number of samples used for compute stability (default as 10), eps (perturbation strength) adjust it to meantain the noise value range as about (5%) of the input obs value range where the noise value range is (0, eps). 
   - Efficiency/runtime: training and explanation runtime.
-  
+- Step 7: draw explainability and stability figures and fidelity evaluation: `python game_name/application.py`, see inline comments for the part of codes corresponding to each functionality.
+- Step 8: Use cases on Pong, You-Shall-Not-Pass, and Kick-And-Defend: `python game_name/applications.py`.
+  - Visualization of explanations and correlations;
+  - Launching adversarial attacks;
+  - Patching policy errors.
+ 
