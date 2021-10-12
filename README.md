@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This repository contains the code of EDGE, a DRL policy explanation method. Before using this code package, please install the required dependency in the ```requirement.txt```. Paper citation:
+This repository contains the code of EDGE, a DRL policy explanation method. Before using this code package, please install the required dependency in the ```requirements.txt```. Paper citation:
 
 ```
 @inproceedings{guo2021edge,
