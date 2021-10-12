@@ -1,13 +1,14 @@
 # EDGE: Strategy-level explanation of DRL agents.
 
 ## Citation
+```
 @inproceedings{guo2021edge,
     title = {CADE: Detecting and Explaining Concept Drift Samples for Security Applications},
     author = {Guo, Wenbo and Wu, Xian and Khan, Usmann and Xing, Xinyu},
     booktitle = {Proc. of NeurIPS},
     year = {2021}
 }
-
+```
 ## Code structure.
 
 The proposed explanation model and the four baselines are in `explainer`.
