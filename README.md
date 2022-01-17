@@ -6,7 +6,7 @@ This repository contains the code of EDGE, a DRL policy explanation method. Befo
 
 ```
 @inproceedings{guo2021edge,
-    title = {CADE: Detecting and Explaining Concept Drift Samples for Security Applications},
+    title = {EDGE: Explaining Deep Reinforcement Learning Policies},
     author = {Guo, Wenbo and Wu, Xian and Khan, Usmann and Xing, Xinyu},
     booktitle = {Proc. of NeurIPS},
     year = {2021}
